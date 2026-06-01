@@ -17,6 +17,7 @@ export default function App() {
   const [typed, setTyped] = useState("");
 
   const videoRef = useRef<HTMLVideoElement>(null);
+  const frameRef = useRef<HTMLImageElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<RohomieoViewer | null>(null);
 
@@ -44,6 +45,14 @@ export default function App() {
         void el.play().catch(() => {
           setDetail("Tap the screen if video does not start");
         });
+      },
+      onFrame: (url) => {
+        const img = frameRef.current;
+        if (img) {
+          img.src = url;
+          img.style.display = "block";
+        }
+        if (videoRef.current) videoRef.current.style.display = "none";
       },
     });
     viewerRef.current = viewer;
@@ -130,6 +139,12 @@ export default function App() {
       ) : (
         <section className="viewer">
           <video ref={videoRef} autoPlay playsInline muted />
+          <img
+            ref={frameRef}
+            className="frame-fallback"
+            alt=""
+            style={{ display: "none" }}
+          />
           <div
             ref={surfaceRef}
             className="touch-surface"

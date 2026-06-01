@@ -1,8 +1,30 @@
 use anyhow::Result;
-use openh264::encoder::{Encoder, EncoderConfig, RateControlMode, UsageType};
-use openh264::OpenH264API;
+use openh264::encoder::{EncodedBitStream, Encoder, EncoderConfig, RateControlMode, UsageType};
 use openh264::formats::YUVSource;
 use openh264::Error;
+use openh264::OpenH264API;
+
+const ANNEX_B_START: &[u8] = &[0, 0, 0, 1];
+
+/// WebRTC H264 payloader expects Annex B (0x00000001 between NAL units).
+pub fn annex_b_from_bitstream(bs: &EncodedBitStream<'_>) -> Vec<u8> {
+    let mut out = Vec::new();
+    for l in 0..bs.num_layers() {
+        let Some(layer) = bs.layer(l) else {
+            continue;
+        };
+        for n in 0..layer.nal_count() {
+            let Some(nal) = layer.nal_unit(n) else {
+                continue;
+            };
+            if !nal.starts_with(ANNEX_B_START) && !nal.starts_with(&[0, 0, 1]) {
+                out.extend_from_slice(ANNEX_B_START);
+            }
+            out.extend_from_slice(nal);
+        }
+    }
+    out
+}
 
 /// BGRA (scrap) → I420 for OpenH264.
 pub fn bgra_to_i420(bgra: &[u8], width: usize, height: usize, stride: usize) -> Vec<u8> {
@@ -147,7 +169,7 @@ impl H264Encoder {
             .encoder
             .encode(&src)
             .map_err(|e: Error| anyhow::anyhow!("{e}"))?;
-        let vec = bitstream.to_vec();
+        let vec = annex_b_from_bitstream(&bitstream);
         self.frames_encoded += 1;
         if vec.is_empty() {
             Ok(None)

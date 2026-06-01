@@ -11,12 +11,15 @@ export type ConnectionState =
 export interface ViewerCallbacks {
   onState: (s: ConnectionState, detail?: string) => void;
   onVideo: (stream: MediaStream) => void;
+  /** JPEG frames over the "frames" datachannel (phone-friendly fallback). */
+  onFrame?: (url: string) => void;
 }
 
 export class RohomieoViewer {
   private ws: WebSocket | null = null;
   private pc: RTCPeerConnection | null = null;
   private dc: RTCDataChannel | null = null;
+  private frameUrl: string | null = null;
   private heartbeatTimer: number | null = null;
 
   constructor(private cb: ViewerCallbacks) {}
@@ -47,6 +50,8 @@ export class RohomieoViewer {
   }
 
   private cleanup() {
+    if (this.frameUrl) URL.revokeObjectURL(this.frameUrl);
+    this.frameUrl = null;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.dc?.close();
     this.pc?.close();
@@ -88,8 +93,25 @@ export class RohomieoViewer {
     };
 
     pc.ondatachannel = (ev) => {
-      this.dc = ev.channel;
-      this.dc.onopen = () => this.cb.onState("connected", "input ready");
+      const ch = ev.channel;
+      if (ch.label === "frames") {
+        ch.binaryType = "arraybuffer";
+        ch.onmessage = (e) => {
+          const data = e.data;
+          if (!(data instanceof ArrayBuffer)) return;
+          const blob = new Blob([data], { type: "image/jpeg" });
+          const url = URL.createObjectURL(blob);
+          if (this.frameUrl) URL.revokeObjectURL(this.frameUrl);
+          this.frameUrl = url;
+          this.cb.onFrame?.(url);
+          this.cb.onState("connected");
+        };
+        return;
+      }
+      if (ch.label === "input") {
+        this.dc = ch;
+        ch.onopen = () => this.cb.onState("connected", "ready");
+      }
     };
 
     return pc;

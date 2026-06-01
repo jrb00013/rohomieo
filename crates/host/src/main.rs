@@ -1,6 +1,7 @@
 mod capture;
 mod encode;
 mod input;
+mod jpeg_frame;
 mod motion;
 mod platform;
 mod signaling_client;

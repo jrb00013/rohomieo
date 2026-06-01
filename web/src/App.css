@@ -99,10 +99,14 @@ button.primary {
   background: #000;
 }
 
-.viewer video {
+.viewer video,
+.viewer .frame-fallback {
+  position: absolute;
+  inset: 0;
   width: 100%;
   height: 100%;
   object-fit: contain;
+  pointer-events: none;
 }
 
 .touch-surface {
