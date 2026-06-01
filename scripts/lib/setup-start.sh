@@ -26,12 +26,17 @@ rohomieo_ensure_lan_portproxy() {
   has_proxy=$(powershell.exe -NoProfile -Command \
     "(netsh interface portproxy show all | Select-String '8443').Count" 2>/dev/null | tr -d '\r')
   [[ "${has_proxy:-0}" != "0" ]] && return 0
-  setup_start_warn "LAN port 8443 not forwarded — approve Admin prompt (portproxy)..."
+  setup_start_warn "LAN port 8443 not forwarded — run as Administrator (see below)"
   local script_w
-  script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/wsl-bridge-portproxy.ps1" 2>/dev/null) || return 0
+  script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/enable-phone-access.ps1" 2>/dev/null) || return 0
   powershell.exe -NoProfile -Command \
     "Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$script_w')" \
     2>/dev/null || true
+  echo ""
+  echo "  If no UAC prompt, open Admin PowerShell and run:"
+  echo "    cd \\\\wsl.localhost\\Ubuntu\\home\\josep\\rohomieo"
+  echo "    powershell -ExecutionPolicy Bypass -File .\\scripts\\windows\\enable-phone-access.ps1"
+  echo ""
 }
 
 rohomieo_pid_running() {
