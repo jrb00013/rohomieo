@@ -16,6 +16,24 @@ rohomieo_ensure_env() {
   mkdir -p "$ROHOMIEO_ROOT/var/run" "$ROHOMIEO_ROOT/var/log"
 }
 
+# Forward Windows LAN :8443 -> WSL (needs Admin once). Opens UAC if missing.
+rohomieo_ensure_lan_portproxy() {
+  command -v powershell.exe &>/dev/null || return 0
+  local wsl_ip
+  wsl_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
+  [[ -n "$wsl_ip" ]] || return 0
+  local has_proxy
+  has_proxy=$(powershell.exe -NoProfile -Command \
+    "(netsh interface portproxy show all | Select-String '8443').Count" 2>/dev/null | tr -d '\r')
+  [[ "${has_proxy:-0}" != "0" ]] && return 0
+  setup_start_warn "LAN port 8443 not forwarded — approve Admin prompt (portproxy)..."
+  local script_w
+  script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/wsl-bridge-portproxy.ps1" 2>/dev/null) || return 0
+  powershell.exe -NoProfile -Command \
+    "Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$script_w')" \
+    2>/dev/null || true
+}
+
 rohomieo_pid_running() {
   local pidfile="$1"
   [[ -f "$pidfile" ]] || return 1
@@ -100,15 +118,20 @@ rohomieo_start_wg_bridge() {
     return 0
   fi
   if [[ ! -f /etc/wireguard/wg0.conf ]]; then
-    setup_start_info "installing wg0.conf..."
-    "$ROHOMIEO_ROOT/scripts/wireguard-wsl-bridge.sh" install || return 1
+    setup_start_info "installing wg0.conf... (sudo)"
+    if ! "$ROHOMIEO_ROOT/scripts/wireguard-wsl-bridge.sh" install; then
+      setup_start_warn "wg0 install skipped (sudo) — same-WiFi still works via LAN IP"
+      return 0
+    fi
   fi
   if sudo wg show wg0 &>/dev/null; then
     setup_start_ok "WireGuard wg0 already up (10.8.0.1)"
     return 0
   fi
-  setup_start_info "WireGuard bridge up..."
-  "$ROHOMIEO_ROOT/scripts/wireguard-wsl-bridge.sh" up
+  setup_start_info "WireGuard bridge up... (sudo)"
+  if ! "$ROHOMIEO_ROOT/scripts/wireguard-wsl-bridge.sh" up; then
+    setup_start_warn "wg0 not up — use Phone WiFi URL or run: sudo ./scripts/wireguard-wsl-bridge.sh up"
+  fi
 }
 
 rohomieo_start_wsl() {
@@ -123,8 +146,19 @@ rohomieo_start_wsl() {
   rohomieo_start_windows_host_window
   echo ""
   setup_start_ok "WSL stack running"
-  echo "  Web UI:  http://127.0.0.1:8443  |  VPN: http://10.8.0.1:8443"
-  echo "  Session/PIN: Windows host PowerShell window"
+  local lan_ip=""
+  if command -v powershell.exe &>/dev/null; then
+    lan_ip=$(powershell.exe -NoProfile -Command \
+      "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -match '^192\.168\.|^10\.' -and \$_.InterfaceAlias -notmatch 'WSL|vEthernet' } | Select-Object -First 1).IPAddress" 2>/dev/null \
+      | tr -d '\r')
+  fi
+  echo "  Laptop:    https://127.0.0.1:8443  (accept self-signed cert)"
+  if [[ -n "$lan_ip" ]]; then
+    echo "  Phone WiFi: https://${lan_ip}:8443  (same network; run portproxy as Admin if unreachable)"
+    rohomieo_ensure_lan_portproxy "$lan_ip" || true
+  fi
+  echo "  Phone VPN:  http://10.8.0.1:8443  (WireGuard on)"
+  echo "  Session/PIN: Windows host PowerShell window (or var/log/host.log)"
   echo "  Stop:      ./setup.sh --stop"
   echo ""
 }

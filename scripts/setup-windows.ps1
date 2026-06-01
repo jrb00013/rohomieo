@@ -53,9 +53,9 @@ if (-not $env:ROHOMIEO_SKIP_WIREGUARD) {
     } else {
         Write-Warning "Install from https://www.wireguard.com/install/"
     }
-    $wgSh = Join-Path $RepoRoot "scripts\wireguard-gen-keys.sh"
-    if ((Test-Path $wgSh) -and (Get-Command bash -ErrorAction SilentlyContinue)) {
-        bash $wgSh 2>$null
+    if (Get-Command wsl -ErrorAction SilentlyContinue) {
+        $wslRepo = (wsl wslpath -u "`"$RepoRoot`"").Trim()
+        wsl -e bash -lc "cd '$wslRepo' && ./scripts/wireguard-gen-keys.sh" 2>$null
     }
 } else {
     Write-Warning "Skipped WireGuard (ROHOMIEO_SKIP_WIREGUARD=1)"

@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Rohomieo unified setup — dispatches to platform scripts (complements setup-windows.ps1).
+# Rohomieo unified setup - dispatches to platform scripts (complements setup-windows.ps1).
 #
 #   ./setup.sh              Auto-detect + install
 #   ./setup.sh --wsl        WSL2 install
@@ -89,7 +89,9 @@ if [[ "$RUN_SETUP" == "false" && "$RUN_START" == "false" && "$RUN_STOP" == "fals
 fi
 
 resolve_target() {
-  [[ "$TARGET" == "auto" ]] && TARGET=$(detect)
+  if [[ "$TARGET" == "auto" ]]; then
+    TARGET=$(detect)
+  fi
 }
 
 resolve_target
@@ -105,7 +107,7 @@ if [[ "$RUN_STOP" == "true" ]]; then
   exit 0
 fi
 
-if [[ "$RUN_SETUP" == "true ]]; then
+if [[ "$RUN_SETUP" == "true" ]]; then
   case "$TARGET" in
     linux)  run_setup linux ;;
     wsl)    run_setup wsl ;;
