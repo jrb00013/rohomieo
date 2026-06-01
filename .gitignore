@@ -1,0 +1,14 @@
+/target/
+**/node_modules/
+web/dist/
+infra/certs/*.pem
+*.key
+*.pub
+.DS_Store
+.idea/
+.vscode/
+mobile/.dart_tool/
+mobile/build/
+mobile/ios/Pods/
+mobile/ios/.symlinks/
+mobile/pubspec.lock
