@@ -17,7 +17,7 @@ use tracing::info;
 #[command(name = "rohomieo-host", about = "Rohomieo remote desktop host agent")]
 struct Args {
     /// WebSocket signaling URL (ws:// or wss://)
-    #[arg(long, default_value = "ws://127.0.0.1:8443/ws")]
+    #[arg(long, default_value = "wss://127.0.0.1:8443/ws")]
     signaling: String,
 
     /// Session ID (share with viewer); random UUID if omitted

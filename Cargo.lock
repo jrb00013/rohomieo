@@ -2103,6 +2103,7 @@ dependencies = [
  "openh264",
  "rand",
  "rohomieo-proto",
+ "rustls",
  "scrap",
  "serde",
  "serde_json",

@@ -66,7 +66,12 @@ impl SessionStore {
         let mut entry = self
             .sessions
             .get_mut(&session_id)
-            .ok_or_else(|| "session not found — start the host first".to_string())?;
+            .ok_or_else(|| {
+                "session not found — the host is not connected to signaling yet. \
+                 On the laptop, check the host window: it must show \"session is live\". \
+                 If you see a WebSocket error, restart with run-bridge.ps1 (host needs wss:// when the page uses https://)."
+                    .to_string()
+            })?;
 
         if entry.pin != pin {
             return Err("invalid PIN".into());

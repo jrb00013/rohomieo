@@ -55,7 +55,7 @@ Write-Host "OK  signaling on :8443" -ForegroundColor Green
 Write-Host "Starting host..." -ForegroundColor Cyan
 Start-Process -FilePath (Join-Path $Run "rohomieo-host.exe") `
     -WorkingDirectory $Run `
-    -ArgumentList @("--signaling", "ws://127.0.0.1:8443/ws") `
+    -ArgumentList @("--signaling", "wss://127.0.0.1:8443/ws") `
     -WindowStyle Normal
 
 $lan = (Get-NetIPAddress -AddressFamily IPv4 |
