@@ -1,0 +1,15 @@
+[Unit]
+Description=Rohomieo signaling server and web UI
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=@ROOT@
+EnvironmentFile=-@ROOT@/.env.rohomieo
+ExecStart=@BIN@/rohomieo-signaling
+Restart=on-failure
+RestartSec=5
+
+[Install]
+WantedBy=default.target
