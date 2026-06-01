@@ -1,0 +1,28 @@
+[package]
+name = "rohomieo-signaling"
+version.workspace = true
+edition.workspace = true
+description = "WebSocket signaling server for Rohomieo remote desktop"
+
+[[bin]]
+name = "rohomieo-signaling"
+path = "src/main.rs"
+
+[dependencies]
+rohomieo-proto = { workspace = true }
+anyhow = { workspace = true }
+tokio = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+serde = { workspace = true }
+serde_json = { workspace = true }
+uuid = { workspace = true }
+futures-util = "0.3"
+axum = { version = "0.7", features = ["ws", "macros"] }
+axum-server = { version = "0.7", features = ["tls-rustls"] }
+rustls = "0.23"
+rustls-pemfile = "2"
+tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
+dashmap = "6"
+rand = "0.8"
+clap = { version = "4", features = ["derive", "env"] }
