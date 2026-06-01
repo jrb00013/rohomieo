@@ -4,27 +4,20 @@
 
 | Environment | Command |
 |-------------|---------|
-| WSL2 | `cd ~/rohomieo && ./setup.sh` |
-| Linux | same |
+| Auto-detect | `./setup.sh` |
+| WSL2 | `./setup.sh --wsl` → `scripts/setup-wsl.sh` + Windows `setup-windows.ps1` |
+| Linux | `./setup.sh --linux` → `scripts/setup-linux.sh` |
+| macOS | `./setup.sh --macos` → `scripts/setup-macos.sh` |
 | Windows only | `powershell -File scripts\setup-windows.ps1` |
-| WSL + Windows desktop | `./setup.sh` (installs both sides) |
 
 ## 2. Start (same machine test)
 
-**Windows native:**
-
-```powershell
-cd $env:USERPROFILE\rohomieo
-.\scripts\start-windows-host.ps1
-```
-
-**WSL/Linux:**
-
-```bash
-source .env.rohomieo
-.local/bin/rohomieo-signaling &
-.local/bin/rohomieo-host &
-```
+| Platform | Command |
+|----------|---------|
+| Windows | `powershell -File scripts\start-windows-host.ps1` |
+| WSL | `./scripts/start-wsl.sh` + Windows host script above |
+| Linux | `./scripts/start-linux.sh` |
+| macOS | `./scripts/start-macos.sh` |
 
 Host prints:
 

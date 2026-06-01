@@ -4,33 +4,38 @@ Stream and control your computer from your phone over **WireGuard** + **WebRTC**
 
 ## One-command setup
 
-**WSL or Linux:**
+| Platform | Command |
+|----------|---------|
+| **Auto-detect** | `./setup.sh` |
+| **WSL2** | `./setup.sh --wsl` (signaling in WSL + calls Windows host setup) |
+| **Linux** | `./setup.sh --linux` |
+| **macOS** | `./setup.sh --macos` |
+| **Windows** | `powershell -File scripts\setup-windows.ps1` |
 
 ```bash
 git clone https://github.com/jrb00013/rohomieo.git ~/rohomieo
 cd ~/rohomieo
-./setup.sh
+./setup.sh              # or: --wsl | --linux | --macos
 ```
 
-**Windows (PowerShell as your user):**
-
-```powershell
-git clone https://github.com/jrb00013/rohomieo.git $env:USERPROFILE\rohomieo
-cd $env:USERPROFILE\rohomieo
-powershell -ExecutionPolicy Bypass -File scripts\setup-windows.ps1
-```
-
-**WSL + Windows desktop (recommended on WSL2):** run `./setup.sh` in WSL (signaling + web), then let it invoke Windows setup for the **host** that captures your real desktop.
+Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Windows builds the `.exe` host for your real desktop; WSL/Linux/macOS scripts build Unix binaries + signaling.
 
 ## Run
 
+| Platform | Start |
+|----------|-------|
+| Linux | `./scripts/start-linux.sh` |
+| WSL | `./scripts/start-wsl.sh` + `scripts\start-windows-host.ps1` on Windows |
+| macOS | `./scripts/start-macos.sh` |
+| Windows | `powershell -File scripts\start-windows-host.ps1` |
+
 ```bash
 source ~/rohomieo/.env.rohomieo
-~/.local/bin/rohomieo-signaling   # terminal 1
-~/.local/bin/rohomieo-host        # terminal 2 (on the machine with the display)
+~/.local/bin/rohomieo-signaling   # or use start-*.sh above
+~/.local/bin/rohomieo-host
 ```
 
-Or quick dev: `./scripts/dev.sh`
+Dev: `./scripts/dev.sh`
 
 Open **http://127.0.0.1:8443** (or your VPN IP), enter **Session ID** + **PIN** from the host log.
 
@@ -48,8 +53,12 @@ cd mobile && flutter create . --platforms=ios && flutter pub get && flutter run 
 
 ```text
 rohomieo/
-  setup.sh              # WSL/Linux installer
-  scripts/setup-windows.ps1
+  setup.sh                  # dispatcher: --linux | --wsl | --macos | --windows
+  scripts/setup-linux.sh
+  scripts/setup-wsl.sh
+  scripts/setup-macos.sh
+  scripts/setup-windows.ps1   # Windows host + MSVC build
+  scripts/start-{linux,wsl,macos}.sh
   crates/{proto,signaling,host}
   web/                  # PWA viewer
   mobile/               # Flutter iOS
