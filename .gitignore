@@ -2,6 +2,12 @@
 **/node_modules/
 web/dist/
 infra/certs/*.pem
+infra/wireguard/keys/
+.env.rohomieo
+.env.rohomieo.windows
+.local/
+SETUP_STATUS.txt
+web/tsconfig.tsbuildinfo
 *.key
 *.pub
 .DS_Store

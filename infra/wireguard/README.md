@@ -21,11 +21,15 @@ Rohomieo is designed **fail-closed**: signaling and WebRTC run on your VPN (`10.
 
 ## 1. Generate keys (once per device)
 
+**Automatic (during `./setup.sh`):** keys are created under `infra/wireguard/keys/` if missing.
+
+**Manual:**
+
 ```bash
+./scripts/wireguard-gen-keys.sh
+# or:
 umask 077
 wg genkey | tee server.key | wg pubkey > server.pub
-wg genkey | tee laptop.key | wg pubkey > laptop.pub
-wg genkey | tee phone.key | wg pubkey > phone.pub
 ```
 
 ## 2. Server (`wg0`) — Raspberry Pi / home server

@@ -41,6 +41,26 @@ if (Get-Command node -ErrorAction SilentlyContinue) {
 
 Set-Location $RepoRoot
 
+# WireGuard for Windows (VPN server on laptop — phone connects remotely)
+if (-not $env:ROHOMIEO_SKIP_WIREGUARD) {
+    Write-Step "WireGuard for Windows..."
+    $wgExe = "${env:ProgramFiles}\WireGuard\wireguard.exe"
+    if (Test-Path $wgExe) {
+        Write-Ok "WireGuard already installed"
+    } elseif (Get-Command winget -ErrorAction SilentlyContinue) {
+        winget install --id WireGuard.WireGuard -e --accept-package-agreements --accept-source-agreements 2>$null
+        Write-Ok "WireGuard installed (or already present)"
+    } else {
+        Write-Warning "Install from https://www.wireguard.com/install/"
+    }
+    $wgSh = Join-Path $RepoRoot "scripts\wireguard-gen-keys.sh"
+    if ((Test-Path $wgSh) -and (Get-Command bash -ErrorAction SilentlyContinue)) {
+        bash $wgSh 2>$null
+    }
+} else {
+    Write-Warning "Skipped WireGuard (ROHOMIEO_SKIP_WIREGUARD=1)"
+}
+
 if (-not $SkipBuild) {
     Write-Step "Building web PWA..."
     Push-Location (Join-Path $RepoRoot "web")

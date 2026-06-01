@@ -28,6 +28,7 @@ install_os_packages() {
 }
 
 install_os_packages
+setup_install_wireguard
 setup_install_rust
 setup_install_node
 setup_gen_certs

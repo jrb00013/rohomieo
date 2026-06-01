@@ -32,7 +32,8 @@ if ! xcode-select -p &>/dev/null; then
 fi
 
 setup_info "Installing brew packages..."
-brew install pkg-config openssl node rustup 2>/dev/null || brew install pkg-config openssl node
+brew install pkg-config openssl node 2>/dev/null || brew install pkg-config openssl node
+setup_install_wireguard
 # Prefer rustup over brew rust if needed
 if ! command -v cargo &>/dev/null; then
   brew install rustup-init 2>/dev/null || true

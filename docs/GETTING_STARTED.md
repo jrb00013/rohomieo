@@ -52,6 +52,8 @@ You should have:
 - `target\release\rohomieo-host.exe`
 - `target\release\rohomieo-signaling.exe`
 - `web\dist\` (PWA)
+- **WireGuard** (installed by `./setup.sh` — Windows app + `wg` in WSL for keys)
+- Optional: `infra/wireguard/keys/*.key` generated on first setup
 
 ---
 

@@ -85,6 +85,92 @@ setup_apt_build_deps() {
   setup_ok "apt packages"
 }
 
+# WireGuard — VPN for phone access to Rohomieo (see infra/wireguard/README.md)
+setup_install_wireguard() {
+  if [[ "${ROHOMIEO_SKIP_WIREGUARD:-}" == "1" ]]; then
+    setup_warn "Skipping WireGuard (ROHOMIEO_SKIP_WIREGUARD=1)"
+    return 0
+  fi
+
+  setup_detect_platform
+  local platform="${ROHOMIEO_PLATFORM:-linux}"
+
+  if command -v wg &>/dev/null; then
+    setup_ok "WireGuard CLI already installed"
+  else
+    if [[ "$platform" == "wsl" ]] || { $IS_LINUX && command -v apt-get &>/dev/null; }; then
+      setup_info "Installing WireGuard tools (apt)..."
+      sudo apt-get install -y wireguard-tools 2>/dev/null || \
+        sudo apt-get install -y wireguard
+    elif command -v dnf &>/dev/null; then
+      setup_info "Installing WireGuard (dnf)..."
+      sudo dnf install -y wireguard-tools
+    elif command -v pacman &>/dev/null; then
+      setup_info "Installing WireGuard (pacman)..."
+      sudo pacman -S --needed --noconfirm wireguard-tools
+    elif [[ "$(uname -s)" == "Darwin" ]]; then
+      setup_install_wireguard_macos_brew
+    fi
+  fi
+
+  if command -v wg &>/dev/null; then
+    setup_ok "wg $(wg --version 2>&1 | head -1 || true)"
+  else
+    setup_warn "wg not in PATH — install WireGuard manually"
+  fi
+
+  # WSL / hybrid: VPN server should run on Windows
+  if [[ "$platform" == "wsl" ]]; then
+    setup_warn "WSL: use WireGuard for Windows as VPN server (wg-quick does not run reliably in WSL)"
+    setup_install_wireguard_windows_app
+  elif [[ "$platform" == "linux" ]] && ! $IS_WSL; then
+    setup_info "Native Linux can run: sudo wg-quick up wg0 (see infra/wireguard/)"
+  fi
+
+  setup_wireguard_gen_keys_if_missing
+}
+
+setup_install_wireguard_macos_brew() {
+  if ! command -v brew &>/dev/null; then
+    setup_warn "Homebrew required for WireGuard on macOS — install brew first"
+    return 1
+  fi
+  setup_info "Installing wireguard-tools (brew)..."
+  brew install wireguard-tools
+  setup_ok "wireguard-tools"
+}
+
+setup_install_wireguard_windows_app() {
+  local win_ps=""
+  command -v powershell.exe &>/dev/null && win_ps="powershell.exe"
+  command -v pwsh.exe &>/dev/null && [[ -z "$win_ps" ]] && win_ps="pwsh.exe"
+  [[ -n "$win_ps" ]] || return 0
+
+  setup_info "Installing WireGuard for Windows (winget)..."
+  if "$win_ps" -NoProfile -Command \
+    "if (Get-Command wireguard -ErrorAction SilentlyContinue) { exit 0 }; \
+     if (Get-Command winget -ErrorAction SilentlyContinue) { \
+       winget install --id WireGuard.WireGuard -e --accept-package-agreements --accept-source-agreements; \
+       exit \$LASTEXITCODE \
+     } else { exit 2 }" 2>/dev/null; then
+    setup_ok "WireGuard for Windows (GUI) — import tunnel from infra/wireguard/"
+  else
+    setup_warn "Install WireGuard manually: https://www.wireguard.com/install/"
+  fi
+}
+
+setup_wireguard_gen_keys_if_missing() {
+  command -v wg &>/dev/null || return 0
+  local keydir="$ROHOMIEO_ROOT/infra/wireguard/keys"
+  if [[ -f "$keydir/server.key" ]]; then
+    setup_ok "VPN keys exist in infra/wireguard/keys/"
+    return 0
+  fi
+  setup_info "Generating WireGuard key pairs (server, laptop, phone)..."
+  bash "$ROHOMIEO_ROOT/scripts/wireguard-gen-keys.sh"
+  setup_ok "keys in infra/wireguard/keys/ — copy into *.conf.example"
+}
+
 setup_build_web() {
   setup_info "Building web PWA..."
   (cd "$ROHOMIEO_ROOT/web" && npm ci && npm run build)
@@ -246,5 +332,6 @@ setup_print_footer() {
   esac
   echo "  Browser: http://127.0.0.1:8443"
   echo "  Windows: scripts\\start-windows-host.ps1"
+  echo "  WireGuard: infra/wireguard/README.md (keys in infra/wireguard/keys/)"
   echo ""
 }

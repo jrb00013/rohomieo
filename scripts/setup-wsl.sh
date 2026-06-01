@@ -15,6 +15,7 @@ setup_info "Rohomieo WSL setup (signaling in WSL + Windows host)"
 setup_ensure_lf
 
 setup_apt_build_deps
+setup_install_wireguard
 
 setup_install_rust
 setup_install_node || setup_warn "Web build needs Node — install Node 18+ and run: cd web && npm ci && npm run build"

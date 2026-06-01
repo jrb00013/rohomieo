@@ -8,6 +8,8 @@
 #   ./setup.sh --windows    Print Windows-only instructions
 #   ./setup.sh --all        WSL: Linux deps + Windows host setup
 #
+# WireGuard is installed by default (apt/brew/winget). Skip: ROHOMIEO_SKIP_WIREGUARD=1 ./setup.sh
+#
 # Windows desktop capture always uses scripts/setup-windows.ps1 (PowerShell).
 set -euo pipefail
 
@@ -24,6 +26,8 @@ Rohomieo setup — pick a platform (shell scripts complement setup-windows.ps1):
   ./setup.sh --macos      macOS with Homebrew
   ./setup.sh --windows    Show Windows PowerShell setup steps only
   ./setup.sh --all        WSL full stack: setup-wsl.sh + setup-windows.ps1
+
+  WireGuard: installed during setup (skip with ROHOMIEO_SKIP_WIREGUARD=1)
 
 Start after setup:
   ./scripts/start-linux.sh | start-wsl.sh | start-macos.sh
