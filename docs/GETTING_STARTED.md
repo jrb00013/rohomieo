@@ -166,6 +166,7 @@ Do this **only after** Part 3 works on your home Wi‑Fi.
 | `invalid PIN` | Use PIN from the host window **after** it started this session |
 | WebSocket error | URL must end with `/ws` in the app; signaling window must stay open |
 | WSL `lxcb` / `lxdo` link errors | `sudo apt install libx11-dev libxcb1-dev libxdo-dev` then re-run setup |
+| apt `nodejs Conflicts: npm` | You already have Node (e.g. NodeSource). Re-run `./setup.sh --wsl` — script skips apt node packages when `node`/`npm` work |
 
 ---
 

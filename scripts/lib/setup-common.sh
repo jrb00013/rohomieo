@@ -58,10 +58,31 @@ setup_source_cargo() {
 
 setup_install_node() {
   if command -v node &>/dev/null && command -v npm &>/dev/null; then
-    setup_ok "Node $(node --version)"
+    setup_ok "Node $(node --version), npm $(npm --version)"
     return
   fi
-  setup_warn "Node/npm not found — install Node 18+ or re-run platform setup"
+  setup_warn "Node/npm not found — install Node 18+ (https://nodejs.org or nvm) then re-run setup"
+  return 1
+}
+
+# Debian/Ubuntu build deps. Skips apt nodejs/npm if Node is already installed (e.g. NodeSource)
+# to avoid: "nodejs : Conflicts: npm"
+setup_apt_build_deps() {
+  command -v apt-get &>/dev/null || return 0
+  local pkgs=(
+    build-essential pkg-config curl git ca-certificates openssl
+    libx11-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxdo-dev
+  )
+  setup_info "Installing apt build dependencies (sudo)..."
+  sudo apt-get update -qq
+  if command -v node &>/dev/null && command -v npm &>/dev/null; then
+    setup_ok "Using existing Node $(node --version) — not installing apt nodejs/npm"
+  else
+    setup_info "Installing nodejs from apt (no Node detected)..."
+    pkgs+=(nodejs npm)
+  fi
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
+  setup_ok "apt packages"
 }
 
 setup_build_web() {

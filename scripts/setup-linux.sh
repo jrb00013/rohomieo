@@ -11,13 +11,7 @@ setup_ensure_lf
 
 install_os_packages() {
   if command -v apt-get &>/dev/null; then
-    setup_info "Installing packages (apt, needs sudo)..."
-    sudo apt-get update -qq
-    sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-      build-essential pkg-config curl git ca-certificates openssl \
-      libx11-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxdo-dev \
-      nodejs npm
-    setup_ok "apt packages"
+    setup_apt_build_deps
   elif command -v dnf &>/dev/null; then
     setup_info "Installing packages (dnf)..."
     sudo dnf install -y gcc gcc-c++ make pkg-config git openssl-devel \

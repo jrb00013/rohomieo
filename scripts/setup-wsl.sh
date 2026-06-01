@@ -14,21 +14,16 @@ fi
 setup_info "Rohomieo WSL setup (signaling in WSL + Windows host)"
 setup_ensure_lf
 
-# Same deps as Linux (signaling + optional X11 host for testing)
-if command -v apt-get &>/dev/null; then
-  setup_info "Installing WSL packages (apt, needs sudo)..."
-  sudo apt-get update -qq
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y \
-    build-essential pkg-config curl git ca-certificates openssl \
-    libx11-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxdo-dev \
-    nodejs npm
-  setup_ok "apt packages"
-fi
+setup_apt_build_deps
 
 setup_install_rust
-setup_install_node
+setup_install_node || setup_warn "Web build needs Node — install Node 18+ and run: cd web && npm ci && npm run build"
 setup_gen_certs
-setup_build_web
+if command -v npm &>/dev/null; then
+  setup_build_web
+else
+  setup_warn "Skipping web PWA build (no npm). Windows setup-windows.ps1 can build web/dist."
+fi
 setup_source_cargo
 cd "$ROHOMIEO_ROOT"
 setup_info "Building rohomieo-signaling (release)..."
