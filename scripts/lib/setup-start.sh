@@ -87,10 +87,28 @@ rohomieo_start_host_bg() {
   setup_start_ok "host pid $(cat "$pidfile") — log var/log/host.log"
 }
 
+rohomieo_ensure_windows_host_build() {
+  local win_ps="" exe_w=""
+  command -v powershell.exe &>/dev/null || return 0
+  win_ps="powershell.exe"
+  exe_w=$(wslpath -w "$ROHOMIEO_ROOT/target/release/rohomieo-host.exe" 2>/dev/null) || return 0
+  if "$win_ps" -NoProfile -Command "Test-Path '$exe_w'" 2>/dev/null | grep -qi true; then
+    return 0
+  fi
+  setup_start_info "Building Windows host.exe (MSVC auto-install if needed)..."
+  local build_w repo_w
+  build_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/build-msvc.ps1" 2>/dev/null) || return 0
+  repo_w=$(wslpath -w "$ROHOMIEO_ROOT" 2>/dev/null) || return 0
+  "$win_ps" -NoProfile -ExecutionPolicy Bypass -File "$build_w" -RepoRoot "$repo_w" -HostOnly \
+    >>"$ROHOMIEO_ROOT/var/log/windows-build.log" 2>&1 &
+  setup_start_warn "Build running in background — see var/log/windows-build.log (host window opens when done)"
+}
+
 rohomieo_start_windows_host_window() {
   local win_ps="" script_w=""
   command -v powershell.exe &>/dev/null && win_ps="powershell.exe"
   [[ -n "$win_ps" ]] || return 0
+  rohomieo_ensure_windows_host_build
   script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/start-host.ps1" 2>/dev/null) || return 0
   setup_start_info "Opening Windows host (new PowerShell window)..."
   "$win_ps" -NoProfile -Command \
@@ -142,6 +160,12 @@ rohomieo_start_wsl() {
   if [[ "$fg" == "true" ]]; then
     exec "$ROHOMIEO_ROOT/scripts/start-wsl-bridge.sh"
   fi
+  # Stop WSL host if running — desktop capture must be Windows .exe
+  if rohomieo_pid_running "$ROHOMIEO_ROOT/var/run/host.pid"; then
+    kill "$(cat "$ROHOMIEO_ROOT/var/run/host.pid")" 2>/dev/null || true
+    rm -f "$ROHOMIEO_ROOT/var/run/host.pid"
+    setup_start_ok "stopped WSL host (using Windows desktop capture)"
+  fi
   rohomieo_start_signaling_bg
   rohomieo_start_windows_host_window
   echo ""
@@ -158,7 +182,7 @@ rohomieo_start_wsl() {
     rohomieo_ensure_lan_portproxy "$lan_ip" || true
   fi
   echo "  Phone VPN:  http://10.8.0.1:8443  (WireGuard on)"
-  echo "  Session/PIN: Windows host PowerShell window (or var/log/host.log)"
+  echo "  Session/PIN: Windows host PowerShell window (build: var/log/windows-build.log)"
   echo "  Stop:      ./setup.sh --stop"
   echo ""
 }

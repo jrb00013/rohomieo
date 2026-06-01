@@ -69,9 +69,9 @@ if (-not $SkipBuild) {
     Pop-Location
     Write-Ok "web/dist"
 
-    Write-Step "Building Rust (release)..."
-    cargo build --release -p rohomieo-signaling
-    cargo build --release -p rohomieo-host
+    Write-Step "Building Rust (release, MSVC env)..."
+    $buildMsvc = Join-Path $RepoRoot "scripts\windows\build-msvc.ps1"
+    & $buildMsvc -RepoRoot $RepoRoot
     Write-Ok "target/release binaries"
 }
 
