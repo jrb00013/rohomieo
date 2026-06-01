@@ -3,6 +3,7 @@ import { InputEvent, send, SignalMessage } from "./proto";
 export type ConnectionState =
   | "disconnected"
   | "connecting"
+  | "registering"
   | "waiting_host"
   | "negotiating"
   | "connected"
@@ -21,27 +22,73 @@ export class RohomieoViewer {
   private dc: RTCDataChannel | null = null;
   private frameUrl: string | null = null;
   private heartbeatTimer: number | null = null;
+  private connectTimer: number | null = null;
 
   constructor(private cb: ViewerCallbacks) {}
 
   connect(signalingUrl: string, sessionId: string, pin: string) {
     this.cleanup();
-    this.cb.onState("connecting");
-    const ws = new WebSocket(signalingUrl);
+    const url = signalingUrl.trim();
+    const sid = sessionId.trim().replace(/\s+/g, "");
+    const pinCode = pin.trim().replace(/\D/g, "").slice(0, 6);
+
+    if (typeof window !== "undefined" && window.location.protocol === "https:" && url.startsWith("ws://")) {
+      this.cb.onState(
+        "error",
+        "Use wss:// (not ws://) — this page is HTTPS"
+      );
+      return;
+    }
+
+    this.cb.onState("connecting", `Opening ${url}`);
+    const ws = new WebSocket(url);
     this.ws = ws;
 
+    this.connectTimer = window.setTimeout(() => {
+      if (ws.readyState === WebSocket.CONNECTING) {
+        ws.close();
+        this.cb.onState(
+          "error",
+          "Timed out reaching signaling. On the phone: open https://YOUR-PC-IP:8443 first, accept the security warning, then connect. Ensure the host window is open on the laptop."
+        );
+      }
+    }, 12_000);
+
     ws.onopen = () => {
-      send(ws, { type: "register_viewer", session_id: sessionId, pin });
+      if (this.connectTimer) clearTimeout(this.connectTimer);
+      this.connectTimer = null;
+      this.cb.onState("registering", "Checking session and PIN…");
+      send(ws, { type: "register_viewer", session_id: sid, pin: pinCode });
       this.startHeartbeat(ws);
     };
 
     ws.onmessage = async (ev) => {
-      const msg = JSON.parse(ev.data as string) as SignalMessage;
-      await this.handleSignal(msg);
+      try {
+        const msg = JSON.parse(ev.data as string) as SignalMessage;
+        await this.handleSignal(msg);
+      } catch (e) {
+        this.cb.onState("error", `Bad message from server: ${e}`);
+      }
     };
 
-    ws.onerror = () => this.cb.onState("error", "WebSocket failed");
-    ws.onclose = () => this.cb.onState("disconnected");
+    ws.onerror = () => {
+      if (this.connectTimer) clearTimeout(this.connectTimer);
+      this.cb.onState(
+        "error",
+        "WebSocket failed — wrong URL or certificate not trusted. Visit https://your-laptop-ip:8443 in Safari/Chrome first and tap Advanced → Proceed."
+      );
+    };
+    ws.onclose = (ev) => {
+      if (this.connectTimer) clearTimeout(this.connectTimer);
+      if (ev.code !== 1000 && this.ws === ws) {
+        this.cb.onState(
+          "error",
+          ev.reason || `Connection closed (code ${ev.code})`
+        );
+      } else {
+        this.cb.onState("disconnected");
+      }
+    };
   }
 
   disconnect() {
@@ -52,6 +99,8 @@ export class RohomieoViewer {
   private cleanup() {
     if (this.frameUrl) URL.revokeObjectURL(this.frameUrl);
     this.frameUrl = null;
+    if (this.connectTimer) clearTimeout(this.connectTimer);
+    this.connectTimer = null;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
     this.dc?.close();
     this.pc?.close();

@@ -34,7 +34,7 @@ export default function App() {
     const viewer = new RohomieoViewer({
       onState: (s, d) => {
         setState(s);
-        if (d) setDetail(d);
+        setDetail(d ?? "");
       },
       onVideo: (stream) => {
         const el = videoRef.current;
@@ -91,6 +91,11 @@ export default function App() {
   };
 
   const connected = state === "connected";
+  const busy =
+    state === "connecting" ||
+    state === "registering" ||
+    state === "waiting_host" ||
+    state === "negotiating";
 
   return (
     <div className="app">
@@ -98,8 +103,9 @@ export default function App() {
         <section className="panel connect-panel">
           <h1>Rohomieo</h1>
           <p className="hint">
-            Connect WireGuard first, then open this page on your VPN IP (e.g.{" "}
-            <code>https://10.8.0.20:8443</code>).
+            Same Wi‑Fi: open <code>https://YOUR-LAPTOP-IP:8443</code> (accept the
+            certificate warning once). Session ID + PIN are in the{" "}
+            <strong>rohomieo-host</strong> window on the PC — not WSL.
           </p>
           <label>
             Signaling WebSocket
@@ -127,12 +133,17 @@ export default function App() {
             />
           </label>
           <div className="actions">
-            <button type="button" className="primary" onClick={connect}>
-              Connect
+            <button
+              type="button"
+              className="primary"
+              onClick={connect}
+              disabled={busy}
+            >
+              {busy ? "Working…" : "Connect"}
             </button>
           </div>
-          <p className="status">
-            {state}
+          <p className="status" role="status">
+            <strong>{statusLabel(state)}</strong>
             {detail ? ` — ${detail}` : ""}
           </p>
         </section>
@@ -188,4 +199,23 @@ export default function App() {
       )}
     </div>
   );
+}
+
+function statusLabel(state: ConnectionState): string {
+  switch (state) {
+    case "connecting":
+      return "Connecting to signaling…";
+    case "registering":
+      return "Registering…";
+    case "waiting_host":
+      return "Waiting for host";
+    case "negotiating":
+      return "Starting video…";
+    case "connected":
+      return "Connected";
+    case "error":
+      return "Error";
+    default:
+      return state;
+  }
 }
