@@ -39,6 +39,8 @@ Dev: `./scripts/dev.sh`
 
 Open **http://127.0.0.1:8443** (or your VPN IP), enter **Session ID** + **PIN** from the host log.
 
+**Full walkthrough (laptop + phone):** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
+
 ## WireGuard (phone off home Wi‑Fi)
 
 [infra/wireguard/README.md](infra/wireguard/README.md)
