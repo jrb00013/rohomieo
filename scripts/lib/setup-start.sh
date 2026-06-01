@@ -93,7 +93,8 @@ rohomieo_start_host_bg() {
 }
 
 rohomieo_ensure_windows_host_build() {
-  [[ -x "$ROHOMIEO_ROOT/target/release/rohomieo-host.exe" ]] && return 0
+  [[ -f "$ROHOMIEO_ROOT/target/release/rohomieo-host.exe" ]] && \
+    [[ -f "$ROHOMIEO_ROOT/target/release/rohomieo-signaling.exe" ]] && return 0
   setup_start_info "Building Windows host.exe (llvm-mingw from WSL, no VS)..."
   if "$ROHOMIEO_ROOT/scripts/build-windows-host.sh" >>"$ROHOMIEO_ROOT/var/log/windows-build.log" 2>&1; then
     setup_start_ok "rohomieo-host.exe ready"
@@ -101,6 +102,31 @@ rohomieo_ensure_windows_host_build() {
     setup_start_warn "host build failed — see var/log/windows-build.log"
     return 1
   fi
+}
+
+rohomieo_start_windows_bridge() {
+  command -v powershell.exe &>/dev/null || return 0
+  rohomieo_ensure_windows_host_build || true
+  setup_start_info "Syncing to Windows AppData (exes + DLLs + web)..."
+  if ! "$ROHOMIEO_ROOT/scripts/sync-windows-run.sh" >>"$ROHOMIEO_ROOT/var/log/windows-build.log" 2>&1; then
+    setup_start_warn "sync failed — run: ./scripts/sync-windows-run.sh"
+    return 1
+  fi
+  setup_start_ok "synced to %LOCALAPPDATA%\\rohomieo-run"
+  local bridge_w fw_w
+  bridge_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/run-bridge.ps1" 2>/dev/null) || return 0
+  fw_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/enable-phone-access.ps1" 2>/dev/null) || true
+  # One-shot: try Admin firewall + portproxy cleanup (phone uses Windows :8443; portproxy not required)
+  if [[ -n "${fw_w:-}" ]]; then
+    powershell.exe -NoProfile -Command \
+      "Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$fw_w')" \
+      2>/dev/null || true
+  fi
+  setup_start_info "Starting signaling + host on Windows..."
+  powershell.exe -NoProfile -Command \
+    "Start-Process powershell -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$bridge_w')" \
+    2>/dev/null || setup_start_warn "Could not launch run-bridge.ps1"
+  sleep 2
 }
 
 rohomieo_start_windows_host_window() {
@@ -159,14 +185,18 @@ rohomieo_start_wsl() {
   if [[ "$fg" == "true" ]]; then
     exec "$ROHOMIEO_ROOT/scripts/start-wsl-bridge.sh"
   fi
-  # Stop WSL host if running — desktop capture must be Windows .exe
+  # Phone on Wi-Fi hits Windows LAN IP — run signaling+host on Windows (not WSL portproxy).
+  if rohomieo_pid_running "$ROHOMIEO_ROOT/var/run/signaling.pid"; then
+    kill "$(cat "$ROHOMIEO_ROOT/var/run/signaling.pid")" 2>/dev/null || true
+    rm -f "$ROHOMIEO_ROOT/var/run/signaling.pid"
+    setup_start_ok "stopped WSL signaling (using Windows :8443 for LAN)"
+  fi
   if rohomieo_pid_running "$ROHOMIEO_ROOT/var/run/host.pid"; then
     kill "$(cat "$ROHOMIEO_ROOT/var/run/host.pid")" 2>/dev/null || true
     rm -f "$ROHOMIEO_ROOT/var/run/host.pid"
-    setup_start_ok "stopped WSL host (using Windows desktop capture)"
   fi
-  rohomieo_start_signaling_bg
-  rohomieo_start_windows_host_window
+  rohomieo_ensure_windows_host_build || true
+  rohomieo_start_windows_bridge
   echo ""
   setup_start_ok "WSL stack running"
   local lan_ip=""
@@ -177,8 +207,7 @@ rohomieo_start_wsl() {
   fi
   echo "  Laptop:    https://127.0.0.1:8443  (accept self-signed cert)"
   if [[ -n "$lan_ip" ]]; then
-    echo "  Phone WiFi: https://${lan_ip}:8443  (same network; run portproxy as Admin if unreachable)"
-    rohomieo_ensure_lan_portproxy "$lan_ip" || true
+    echo "  Phone WiFi: https://${lan_ip}:8443  (signaling runs on Windows)"
   fi
   echo "  Phone VPN:  http://10.8.0.1:8443  (WireGuard on)"
   echo "  Session/PIN: Windows host PowerShell window (build: var/log/windows-build.log)"

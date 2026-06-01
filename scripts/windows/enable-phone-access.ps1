@@ -1,19 +1,11 @@
-# Run as Administrator. Works from any directory.
-# Example:
-#   cd \\wsl.localhost\Ubuntu\home\josep\rohomieo
-#   powershell -ExecutionPolicy Bypass -File .\scripts\windows\enable-phone-access.ps1
-
+# Run as Administrator once — firewall for phone on same Wi-Fi (no portproxy needed when using Windows signaling).
 #Requires -RunAsAdministrator
 $ErrorActionPreference = "Stop"
 
-$wslIp = (wsl -e hostname -I).Trim().Split()[0]
-if (-not $wslIp) { throw "Could not read WSL IP. Is WSL running?" }
+Write-Host "Rohomieo: allow inbound TCP 8443 on Private/Public Wi-Fi" -ForegroundColor Cyan
 
-Write-Host "WSL IP: $wslIp" -ForegroundColor Cyan
-
+# Remove stale WSL portproxy if any (Windows signaling binds LAN directly)
 netsh interface portproxy delete v4tov4 listenport=8443 listenaddress=0.0.0.0 2>$null | Out-Null
-netsh interface portproxy add v4tov4 listenport=8443 listenaddress=0.0.0.0 connectport=8443 connectaddress=$wslIp
-netsh interface portproxy show all
 
 $rule = Get-NetFirewallRule -DisplayName "Rohomieo-Signaling-TCP" -ErrorAction SilentlyContinue
 if (-not $rule) {
@@ -21,7 +13,7 @@ if (-not $rule) {
         -Protocol TCP -LocalPort 8443 -Profile Any | Out-Null
     Write-Host "OK  firewall rule added" -ForegroundColor Green
 } else {
-    Write-Host "OK  firewall rule exists" -ForegroundColor Green
+    Write-Host "OK  firewall rule already exists" -ForegroundColor Green
 }
 
 $lan = (Get-NetIPAddress -AddressFamily IPv4 |
@@ -29,5 +21,8 @@ $lan = (Get-NetIPAddress -AddressFamily IPv4 |
     Select-Object -First 1).IPAddress
 
 Write-Host ""
-Write-Host "Phone (same Wi-Fi):  https://${lan}:8443" -ForegroundColor Yellow
-Write-Host "Accept the self-signed certificate, then enter Session ID + PIN." -ForegroundColor Green
+Write-Host "Then run (no Admin):" -ForegroundColor Cyan
+Write-Host "  powershell -ExecutionPolicy Bypass -File scripts\windows\run-bridge.ps1"
+Write-Host ""
+Write-Host "Phone:  https://${lan}:8443" -ForegroundColor Yellow
+Write-Host ""

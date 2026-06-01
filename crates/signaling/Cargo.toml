@@ -20,7 +20,7 @@ uuid = { workspace = true }
 futures-util = "0.3"
 axum = { version = "0.7", features = ["ws", "macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
-rustls = "0.23"
+rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
 dashmap = "6"
