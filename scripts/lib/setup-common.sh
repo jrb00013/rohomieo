@@ -119,10 +119,14 @@ setup_install_wireguard() {
     setup_warn "wg not in PATH — install WireGuard manually"
   fi
 
-  # WSL / hybrid: VPN server should run on Windows
+  # WSL: prefer in-WSL VPN bridge (mirrored networking) or fallback to Windows GUI
   if [[ "$platform" == "wsl" ]]; then
-    setup_warn "WSL: use WireGuard for Windows as VPN server (wg-quick does not run reliably in WSL)"
-    setup_install_wireguard_windows_app
+    setup_ok "WSL2 WireGuard bridge: ./scripts/wireguard-wsl-bridge.sh install (see infra/wireguard/wsl-bridge/)"
+    if [[ "${ROHOMIEO_WG_WINDOWS_GUI:-}" == "1" ]]; then
+      setup_install_wireguard_windows_app
+    else
+      setup_warn "Optional Windows GUI: ROHOMIEO_WG_WINDOWS_GUI=1 ./setup.sh --wsl"
+    fi
   elif [[ "$platform" == "linux" ]] && ! $IS_WSL; then
     setup_info "Native Linux can run: sudo wg-quick up wg0 (see infra/wireguard/)"
   fi
@@ -319,7 +323,8 @@ setup_print_footer() {
   echo "  source $ROHOMIEO_ROOT/.env.rohomieo"
   case "$platform" in
     wsl)
-      echo "  ./scripts/start-wsl.sh          # signaling in WSL"
+      echo "  ./scripts/start-wsl-bridge.sh     # VPN (wg0) + signaling in WSL"
+      echo "  ./scripts/wireguard-wsl-bridge.sh up"
       echo "  ./scripts/start-windows-host.ps1  # host on Windows (PowerShell)"
       ;;
     macos)

@@ -1,0 +1,27 @@
+# WSL2 WireGuard server — rendered by scripts/wireguard-wsl-bridge.sh
+# Server VPN IP: 10.8.0.1 | Phone peer: 10.8.0.30
+
+[Interface]
+Address = 10.8.0.1/24
+ListenPort = 51820
+PrivateKey = @SERVER_PRIVATE_KEY@
+MTU = 1420
+
+# PostUp runs in WSL: NAT + forwarding for VPN clients
+PostUp = sysctl -w net.ipv4.ip_forward=1; \
+  UPLINK=$(ip route show default | awk '{print $5; exit}'); \
+  iptables -A FORWARD -i %i -j ACCEPT; \
+  iptables -A FORWARD -o %i -j ACCEPT; \
+  iptables -t nat -A POSTROUTING -o $UPLINK -j MASQUERADE; \
+  iptables -t nat -A POSTROUTING -s 10.8.0.0/24 -j MASQUERADE
+PostDown = UPLINK=$(ip route show default | awk '{print $5; exit}'); \
+  iptables -D FORWARD -i %i -j ACCEPT 2>/dev/null; \
+  iptables -D FORWARD -o %i -j ACCEPT 2>/dev/null; \
+  iptables -t nat -D POSTROUTING -o $UPLINK -j MASQUERADE 2>/dev/null; \
+  iptables -t nat -D POSTROUTING -s 10.8.0.0/24 -j MASQUERADE 2>/dev/null
+
+[Peer]
+# Phone
+PublicKey = @PHONE_PUBLIC_KEY@
+AllowedIPs = 10.8.0.30/32
+PersistentKeepalive = 25

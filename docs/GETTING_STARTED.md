@@ -119,21 +119,41 @@ Enter **Session ID** and **PIN** → **Connect**. You should see your desktop an
 
 Do this **only after** Part 3 works on your home Wi‑Fi.
 
-1. Install **WireGuard** on Windows and your phone.
+### Option A — WSL2 WireGuard bridge (VPN server in WSL)
 
-2. Configure VPN using [../infra/wireguard/README.md](../infra/wireguard/README.md):
-   - **Laptop** = WireGuard server (`10.8.0.1`) — a Pi is optional, not required.
-   - **Router**: forward **UDP 51820** to the laptop’s LAN IP.
-   - **Phone** = peer (`10.8.0.30` in the examples).
+Full guide: [infra/wireguard/wsl-bridge/README.md](../infra/wireguard/wsl-bridge/README.md)
 
-3. On the laptop, run `start-windows-host.ps1` as usual.
+```powershell
+# Windows once — mirrored networking
+powershell -File scripts\windows\wsl-enable-mirrored-network.ps1
+wsl --shutdown
+```
 
-4. On the phone:
-   - Turn **WireGuard ON**
-   - Browser: `http://10.8.0.1:8443` (or your server VPN IP)
-   - Same **Session ID** + **PIN**
+```bash
+# WSL once
+./scripts/wireguard-wsl-bridge.sh install
+```
 
-5. Optional: generate TLS certs (`scripts/gen-dev-cert.sh`) and use `https://` — trust the dev cert on the phone for testing.
+```powershell
+# Windows Admin once — firewall + TCP 8443 to WSL
+powershell -File scripts\windows\wsl-bridge-portproxy.ps1
+```
+
+**Each session:**
+
+```bash
+./scripts/start-wsl-bridge.sh          # WSL: wg0 + signaling
+```
+
+```powershell
+powershell -File scripts\start-windows-host.ps1   # Windows: screen host
+```
+
+Phone: WireGuard on → `http://10.8.0.1:8443` → session + PIN.
+
+### Option B — WireGuard on Windows only
+
+See [../infra/wireguard/README.md](../infra/wireguard/README.md) — use WireGuard for Windows GUI instead of the WSL bridge.
 
 ---
 

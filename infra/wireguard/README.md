@@ -2,6 +2,12 @@
 
 Rohomieo is designed **fail-closed**: signaling and WebRTC run on your VPN (`10.8.0.0/24`). Do not port-forward `8443` to the public internet unless you add extra hardening.
 
+## WSL2 laptop (recommended for WSL users)
+
+Run the VPN server **inside WSL** with mirrored Windows networking:
+
+**[wsl-bridge/README.md](wsl-bridge/README.md)** — `./scripts/wireguard-wsl-bridge.sh` + `scripts/windows/wsl-enable-mirrored-network.ps1`
+
 ## Topology
 
 ```text
