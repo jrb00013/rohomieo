@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "Rohomieo signaling and input protocol",
+  "definitions": {
+    "SignalMessage": {
+      "oneOf": [
+        { "type": "object", "required": ["type", "session_id", "pin"], "properties": { "type": { "const": "register_host" } } },
+        { "type": "object", "required": ["type", "session_id", "pin"], "properties": { "type": { "const": "register_viewer" } } }
+      ]
+    },
+    "InputEvent": {
+      "oneOf": [
+        { "properties": { "type": { "const": "pointer" }, "x": { "type": "number" }, "y": { "type": "number" }, "action": { "type": "integer" } } },
+        { "properties": { "type": { "const": "key" }, "key": { "type": "string" }, "down": { "type": "boolean" } } },
+        { "properties": { "type": { "const": "wheel" }, "delta_x": { "type": "number" }, "delta_y": { "type": "number" } } }
+      ]
+    }
+  }
+}
