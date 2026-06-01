@@ -7,9 +7,11 @@ Stream and control your computer from your phone over **WireGuard** + **WebRTC**
 | Platform | Command |
 |----------|---------|
 | **Auto-detect** | `./setup.sh` |
-| **WSL2** | `./setup.sh --wsl` (signaling in WSL + calls Windows host setup) |
-| **Linux** | `./setup.sh --linux` |
-| **macOS** | `./setup.sh --macos` |
+| **WSL2** | `./setup.sh --wsl` |
+| **Install + start** | `./setup.sh --wsl --start` |
+| **Start only** | `./setup.sh --start` |
+| **Stop** | `./setup.sh --stop` |
+| **Linux / macOS** | `./setup.sh --linux` / `--macos` |
 | **Windows** | `powershell -File scripts\setup-windows.ps1` |
 
 ```bash

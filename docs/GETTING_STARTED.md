@@ -139,15 +139,15 @@ wsl --shutdown
 powershell -File scripts\windows\wsl-bridge-portproxy.ps1
 ```
 
-**Each session:**
+**Each session (one command):**
 
 ```bash
-./scripts/start-wsl-bridge.sh          # WSL: wg0 + signaling
+./setup.sh --start
 ```
 
-```powershell
-powershell -File scripts\start-windows-host.ps1   # Windows: screen host
-```
+Or separately: `./scripts/start-wsl-bridge.sh` (foreground) + Windows `scripts\windows\start-host.ps1`
+
+Stop: `./setup.sh --stop`
 
 Phone: WireGuard on → `http://10.8.0.1:8443` → session + PIN.
 

@@ -29,9 +29,12 @@ setup_source_cargo
 cd "$ROHOMIEO_ROOT"
 setup_info "Building rohomieo-signaling (release)..."
 cargo build --release -p rohomieo-signaling
-setup_warn "Building optional WSL host (cannot capture Windows desktop)..."
-cargo build --release -p rohomieo-host 2>/dev/null && setup_ok "rohomieo-host (WSL/X11 only)" || \
-  setup_warn "rohomieo-host skipped — use Windows .exe for your desktop"
+setup_info "Building optional WSL host (X11 only — desktop capture uses Windows .exe)..."
+if cargo build --release -p rohomieo-host 2>/dev/null; then
+  setup_ok "rohomieo-host built in WSL (optional)"
+else
+  setup_warn "rohomieo-host not built in WSL (expected — use Windows host)"
+fi
 
 setup_write_env
 setup_write_wrappers
@@ -45,3 +48,9 @@ else
 fi
 
 setup_print_footer wsl
+
+if [[ "${ROHOMIEO_AUTO_START:-}" == "1" ]]; then
+  # shellcheck source=lib/setup-start.sh
+  source "$ROHOMIEO_ROOT/scripts/lib/setup-start.sh"
+  rohomieo_start_wsl false
+fi

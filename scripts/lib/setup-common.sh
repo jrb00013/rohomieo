@@ -177,7 +177,11 @@ setup_wireguard_gen_keys_if_missing() {
 
 setup_build_web() {
   setup_info "Building web PWA..."
-  (cd "$ROHOMIEO_ROOT/web" && npm ci && npm run build)
+  (
+    cd "$ROHOMIEO_ROOT/web"
+    npm ci --no-fund --no-audit 2>/dev/null || npm ci
+    npm run build
+  )
   setup_ok "web/dist"
 }
 
@@ -338,5 +342,7 @@ setup_print_footer() {
   echo "  Browser: http://127.0.0.1:8443"
   echo "  Windows: scripts\\start-windows-host.ps1"
   echo "  WireGuard: infra/wireguard/README.md (keys in infra/wireguard/keys/)"
+  echo "  Start:     ./setup.sh --start"
+  echo "  Stop:      ./setup.sh --stop"
   echo ""
 }

@@ -3,7 +3,7 @@ mod ws;
 
 use anyhow::Context;
 use axum::{
-    extract::ws::WebSocketUpgrade,
+    extract::{ws::WebSocketUpgrade, State},
     response::IntoResponse,
     routing::get,
     Router,
@@ -58,7 +58,7 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .route("/health", get(|| async { "ok" }))
+        .route("/health", get(health))
         .nest_service("/", serve_dir)
         .layer(
             CorsLayer::new()
@@ -94,9 +94,13 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
+async fn health(State(store): State<Arc<SessionStore>>) -> impl IntoResponse {
+    format!("ok ws_connections={}", store.connection_count())
+}
+
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    axum::extract::State(store): axum::extract::State<Arc<SessionStore>>,
+    State(store): State<Arc<SessionStore>>,
 ) -> impl IntoResponse {
     ws.on_upgrade(move |socket| ws::handle_socket(socket, store))
 }
