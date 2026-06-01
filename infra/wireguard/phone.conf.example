@@ -1,0 +1,10 @@
+[Interface]
+Address = 10.8.0.30/32
+PrivateKey = PHONE_PRIVATE_KEY_REPLACE
+DNS = 10.8.0.1
+
+[Peer]
+PublicKey = SERVER_PUBLIC_KEY_REPLACE
+Endpoint = YOUR_HOME_IP_OR_DDNS:51820
+AllowedIPs = 10.8.0.0/24
+PersistentKeepalive = 25

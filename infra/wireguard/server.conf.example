@@ -1,0 +1,18 @@
+[Interface]
+Address = 10.8.0.1/24
+ListenPort = 51820
+PrivateKey = SERVER_PRIVATE_KEY_REPLACE
+
+# NAT for VPN clients (adjust eth0 to your uplink)
+PostUp = iptables -t nat -A POSTROUTING -o eth0 -j MASQUERADE
+PostDown = iptables -t nat -D POSTROUTING -o eth0 -j MASQUERADE
+
+[Peer]
+# Laptop
+PublicKey = LAPTOP_PUBLIC_KEY_REPLACE
+AllowedIPs = 10.8.0.20/32
+
+[Peer]
+# Phone
+PublicKey = PHONE_PUBLIC_KEY_REPLACE
+AllowedIPs = 10.8.0.30/32
