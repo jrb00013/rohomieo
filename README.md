@@ -8,11 +8,10 @@ Stream and control your computer from your phone over **WireGuard** + **WebRTC**
 |----------|---------|
 | **Auto-detect** | `./setup.sh` |
 | **WSL2** | `./setup.sh --wsl` |
-| **Install + start** | `./setup.sh --wsl --start` |
-| **Start only** | `./setup.sh --start` |
+| **Start session** | `./setup.sh --start` (Windows signaling + host, phone on LAN) |
 | **Stop** | `./setup.sh --stop` |
+| **Build Windows exes** | `./scripts/build-windows-host.sh` (no Visual Studio) |
 | **Linux / macOS** | `./setup.sh --linux` / `--macos` |
-| **Windows** | `powershell -File scripts\setup-windows.ps1` |
 
 ```bash
 git clone https://github.com/jrb00013/rohomieo.git ~/rohomieo
@@ -26,10 +25,10 @@ Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Wind
 
 | Platform | Start |
 |----------|-------|
+| WSL + Windows desktop | `./setup.sh --start` |
 | Linux | `./scripts/start-linux.sh` |
-| WSL | `./scripts/start-wsl.sh` + `scripts\start-windows-host.ps1` on Windows |
 | macOS | `./scripts/start-macos.sh` |
-| Windows | `powershell -File scripts\start-windows-host.ps1` |
+| Windows only | `powershell -File scripts\windows\run-bridge.ps1` |
 
 ```bash
 source ~/rohomieo/.env.rohomieo
@@ -39,7 +38,7 @@ source ~/rohomieo/.env.rohomieo
 
 Dev: `./scripts/dev.sh`
 
-Open **http://127.0.0.1:8443** (or your VPN IP), enter **Session ID** + **PIN** from the host log.
+Open **https://127.0.0.1:8443** (or `https://<your-wifi-ip>:8443` on phone), accept the cert warning, enter **Session ID** + **PIN** from the host window.
 
 **Full walkthrough (laptop + phone):** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 
