@@ -61,7 +61,7 @@ rohomieo/
   scripts/setup-linux.sh
   scripts/setup-wsl.sh
   scripts/setup-macos.sh
-  scripts/setup-windows.ps1   # Windows host + MSVC build
+  scripts/setup-windows.ps1   # Windows host (built via WSL MinGW, no Visual Studio)
   scripts/start-{linux,wsl,macos}.sh
   crates/{proto,signaling,host}
   web/                  # PWA viewer

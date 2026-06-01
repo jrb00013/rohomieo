@@ -88,20 +88,14 @@ rohomieo_start_host_bg() {
 }
 
 rohomieo_ensure_windows_host_build() {
-  local win_ps="" exe_w=""
-  command -v powershell.exe &>/dev/null || return 0
-  win_ps="powershell.exe"
-  exe_w=$(wslpath -w "$ROHOMIEO_ROOT/target/release/rohomieo-host.exe" 2>/dev/null) || return 0
-  if "$win_ps" -NoProfile -Command "Test-Path '$exe_w'" 2>/dev/null | grep -qi true; then
-    return 0
+  [[ -x "$ROHOMIEO_ROOT/target/release/rohomieo-host.exe" ]] && return 0
+  setup_start_info "Building Windows host.exe (llvm-mingw from WSL, no VS)..."
+  if "$ROHOMIEO_ROOT/scripts/build-windows-host.sh" >>"$ROHOMIEO_ROOT/var/log/windows-build.log" 2>&1; then
+    setup_start_ok "rohomieo-host.exe ready"
+  else
+    setup_start_warn "host build failed — see var/log/windows-build.log"
+    return 1
   fi
-  setup_start_info "Building Windows host.exe (MSVC auto-install if needed)..."
-  local build_w repo_w
-  build_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/build-msvc.ps1" 2>/dev/null) || return 0
-  repo_w=$(wslpath -w "$ROHOMIEO_ROOT" 2>/dev/null) || return 0
-  "$win_ps" -NoProfile -ExecutionPolicy Bypass -File "$build_w" -RepoRoot "$repo_w" -HostOnly \
-    >>"$ROHOMIEO_ROOT/var/log/windows-build.log" 2>&1 &
-  setup_start_warn "Build running in background — see var/log/windows-build.log (host window opens when done)"
 }
 
 rohomieo_start_windows_host_window() {

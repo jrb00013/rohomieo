@@ -69,10 +69,9 @@ if (-not $SkipBuild) {
     Pop-Location
     Write-Ok "web/dist"
 
-    Write-Step "Building Rust (release, MSVC env)..."
-    $buildMsvc = Join-Path $RepoRoot "scripts\windows\build-msvc.ps1"
-    & $buildMsvc -RepoRoot $RepoRoot
-    Write-Ok "target/release binaries"
+    Write-Step "Building rohomieo-host.exe (WSL cross-compile, no Visual Studio)..."
+    & (Join-Path $RepoRoot "scripts\windows\build-host.ps1") $RepoRoot
+    Write-Ok "target/release/rohomieo-host.exe"
 }
 
 $certDir = Join-Path $RepoRoot "infra\certs"

@@ -306,14 +306,14 @@ setup_invoke_windows() {
     setup_warn "Run on Windows: powershell -File scripts\\setup-windows.ps1"
     return 0
   fi
-  setup_info "Windows companion setup (host.exe + MSVC build)..."
+  setup_info "Windows companion setup (host.exe via WSL MinGW build)..."
   local win_script win_root
   win_script=$(wslpath -w "$ps1" 2>/dev/null) || win_script="$ps1"
   win_root=$(wslpath -w "$ROHOMIEO_ROOT" 2>/dev/null) || win_root="$ROHOMIEO_ROOT"
   if "$win_ps" -NoProfile -ExecutionPolicy Bypass -File "$win_script" -RepoRoot "$win_root"; then
     setup_ok "Windows setup finished"
   else
-    setup_warn "Windows setup failed — install VS Build Tools, then run setup-windows.ps1"
+    setup_warn "Windows setup failed — run: ./scripts/build-windows-host.sh"
   fi
 }
 

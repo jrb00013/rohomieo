@@ -4,6 +4,7 @@ web/dist/
 infra/certs/*.pem
 infra/wireguard/keys/
 var/
+.tools/
 .env.rohomieo
 .env.rohomieo.windows
 .local/
