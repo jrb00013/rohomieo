@@ -36,10 +36,14 @@ export default function App() {
         if (d) setDetail(d);
       },
       onVideo: (stream) => {
-        if (videoRef.current) {
-          videoRef.current.srcObject = stream;
-          void videoRef.current.play();
-        }
+        const el = videoRef.current;
+        if (!el) return;
+        el.srcObject = stream;
+        el.muted = true;
+        el.playsInline = true;
+        void el.play().catch(() => {
+          setDetail("Tap the screen if video does not start");
+        });
       },
     });
     viewerRef.current = viewer;
@@ -149,6 +153,8 @@ export default function App() {
           {keyboardOpen && (
             <div className="osk">
               <input
+                autoFocus
+                enterKeyHint="send"
                 value={typed}
                 onChange={(e) => setTyped(e.target.value)}
                 onKeyDown={(e) => {

@@ -70,8 +70,10 @@ export class RohomieoViewer {
     this.pc = pc;
 
     pc.ontrack = (ev) => {
-      if (ev.streams[0]) this.cb.onState("connected");
-      this.cb.onVideo(ev.streams[0]);
+      const stream =
+        ev.streams[0] ?? new MediaStream(ev.track ? [ev.track] : []);
+      this.cb.onState("connected");
+      this.cb.onVideo(stream);
     };
 
     pc.onicecandidate = (ev) => {
@@ -87,6 +89,7 @@ export class RohomieoViewer {
 
     pc.ondatachannel = (ev) => {
       this.dc = ev.channel;
+      this.dc.onopen = () => this.cb.onState("connected", "input ready");
     };
 
     return pc;

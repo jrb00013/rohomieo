@@ -54,6 +54,10 @@ impl WebRtcHost {
         let video_track = Arc::new(TrackLocalStaticSample::new(
             RTCRtpCodecCapability {
                 mime_type: MIME_TYPE_H264.to_owned(),
+                clock_rate: 90_000,
+                sdp_fmtp_line:
+                    "level-asymmetry-allowed=1;packetization-mode=1;profile-level-id=42e01f"
+                        .to_owned(),
                 ..Default::default()
             },
             "video".to_owned(),
@@ -203,14 +207,23 @@ async fn run_capture_loop(
             continue;
         }
 
-        if let Some(h264) = encoder.encode_bgra(&bgra, w, h, stride)? {
-            let _ = video_track
-                .write_sample(&Sample {
-                    data: Bytes::from(h264),
-                    duration: frame_duration,
-                    ..Default::default()
-                })
-                .await;
+        match encoder.encode_bgra(&bgra, w, h, stride) {
+            Ok(Some(h264)) => {
+                if video_track
+                    .write_sample(&Sample {
+                        data: Bytes::from(h264),
+                        duration: frame_duration,
+                        ..Default::default()
+                    })
+                    .await
+                    .is_err()
+                {
+                    warn!("video track write failed — stopping capture");
+                    return Ok(());
+                }
+            }
+            Ok(None) => {}
+            Err(e) => warn!("encode frame: {e:#}"),
         }
     }
 }

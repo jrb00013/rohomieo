@@ -2,6 +2,7 @@ use anyhow::{Context, Result};
 use scrap::{Capturer, Display};
 use std::time::Duration;
 use tokio::sync::mpsc;
+use tracing::warn;
 
 pub struct ScreenCapture {
     rx: mpsc::Receiver<Vec<u8>>,
@@ -62,18 +63,39 @@ impl ScreenCapture {
 
     /// Latest frame from the capture thread, if any.
     pub async fn capture_frame(&mut self) -> Result<Option<Vec<u8>>> {
-        // Drain to latest frame
         let mut latest = None;
         while let Ok(frame) = self.rx.try_recv() {
             latest = Some(frame);
         }
         if latest.is_some() {
-            return Ok(latest);
+            return Ok(latest.map(|f| self.normalize_frame(f)));
         }
         match tokio::time::timeout(Duration::from_millis(100), self.rx.recv()).await {
-            Ok(Some(f)) => Ok(Some(f)),
+            Ok(Some(f)) => Ok(Some(self.normalize_frame(f))),
             _ => Ok(None),
         }
+    }
+
+    /// DXGI frames can have row padding; stride = len / height (see scrap examples).
+    fn normalize_frame(&mut self, frame: Vec<u8>) -> Vec<u8> {
+        if self.height == 0 {
+            return frame;
+        }
+        let row_bytes = frame.len() / self.height;
+        if row_bytes >= self.width * 4 {
+            if row_bytes != self.stride {
+                self.stride = row_bytes;
+            }
+            return frame;
+        }
+        warn!(
+            "unexpected frame size {} for {}x{} — expected at least {} bytes/row",
+            frame.len(),
+            self.width,
+            self.height,
+            self.width * 4
+        );
+        frame
     }
 
     pub fn frame_delay(&self, idle: bool, target_fps: u32, idle_fps: u32) -> Duration {
