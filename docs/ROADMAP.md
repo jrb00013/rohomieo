@@ -42,7 +42,7 @@ Goal: make daily use frictionless and observable.
 - [x] Fullscreen viewer, scroll wheel, right-click
 - [x] CI (Rust + web build)
 - [x] Docker Compose for signaling + dev stack
-- [ ] Host config file (`~/.config/rohomieo/host.toml`)
+- [x] Host config file (`~/.config/rohomieo/host.toml`)
 - [ ] Connection quality overlay (RTT, FPS estimate)
 
 ---
@@ -106,3 +106,7 @@ Scripts stubbed in `scripts/gen-device-key.sh` — full integration in 0.3.
 3. See [CONTRIBUTING.md](../CONTRIBUTING.md) for build/test workflow.
 
 **Good first issues:** web UI polish, docs, WireGuard guides, Flutter viewer, audit log filters.
+
+## Version history
+
+See [CHANGELOG.md](../CHANGELOG.md).
