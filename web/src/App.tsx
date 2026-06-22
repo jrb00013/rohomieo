@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { ConnectionState, normalizedPointer, RohomieoViewer } from "./webrtc";
+import { loadSession, saveSession } from "./storage";
 import "./App.css";
 
 const DEFAULT_WS =
@@ -8,13 +9,18 @@ const DEFAULT_WS =
     : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
 export default function App() {
-  const [signalingUrl, setSignalingUrl] = useState(DEFAULT_WS);
-  const [sessionId, setSessionId] = useState("");
-  const [pin, setPin] = useState("");
+  const saved = loadSession();
+  const [signalingUrl, setSignalingUrl] = useState(
+    saved.signalingUrl ?? DEFAULT_WS
+  );
+  const [sessionId, setSessionId] = useState(saved.sessionId ?? "");
+  const [pin, setPin] = useState(saved.pin ?? "");
   const [state, setState] = useState<ConnectionState>("disconnected");
   const [detail, setDetail] = useState("");
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [typed, setTyped] = useState("");
+  const [remember, setRemember] = useState(true);
+  const [fullscreen, setFullscreen] = useState(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLImageElement>(null);
@@ -26,10 +32,23 @@ export default function App() {
     return () => v?.disconnect();
   }, []);
 
+  useEffect(() => {
+    const onFs = () => setFullscreen(!!document.fullscreenElement);
+    document.addEventListener("fullscreenchange", onFs);
+    return () => document.removeEventListener("fullscreenchange", onFs);
+  }, []);
+
   const connect = useCallback(() => {
     if (!sessionId.trim() || !pin.trim()) {
       setDetail("Enter session ID and PIN from the host");
       return;
+    }
+    if (remember) {
+      saveSession({
+        signalingUrl: signalingUrl.trim(),
+        sessionId: sessionId.trim(),
+        pin: pin.trim(),
+      });
     }
     const viewer = new RohomieoViewer({
       onState: (s, d) => {
@@ -57,9 +76,18 @@ export default function App() {
     });
     viewerRef.current = viewer;
     viewer.connect(signalingUrl, sessionId.trim(), pin.trim());
-  }, [signalingUrl, sessionId, pin]);
+  }, [signalingUrl, sessionId, pin, remember]);
 
   const disconnect = () => viewerRef.current?.disconnect();
+
+  const toggleFullscreen = async () => {
+    const root = document.documentElement;
+    if (!document.fullscreenElement) {
+      await root.requestFullscreen?.();
+    } else {
+      await document.exitFullscreen?.();
+    }
+  };
 
   const sendPointer = (action: number, clientX: number, clientY: number) => {
     const el = surfaceRef.current;
@@ -78,8 +106,23 @@ export default function App() {
 
   const onMouse = (e: React.MouseEvent) => {
     const action =
-      e.type === "mousedown" ? 1 : e.type === "mouseup" ? 2 : 0;
-    sendPointer(action, e.clientX, e.clientY);
+      e.button === 2
+        ? e.type === "mousedown"
+          ? 3
+          : e.type === "mouseup"
+            ? 4
+            : 0
+        : e.type === "mousedown"
+          ? 1
+          : e.type === "mouseup"
+            ? 2
+            : 0;
+    if (action) sendPointer(action, e.clientX, e.clientY);
+  };
+
+  const onWheel = (e: React.WheelEvent) => {
+    e.preventDefault();
+    viewerRef.current?.sendWheel(e.deltaX, e.deltaY);
   };
 
   const flushKey = (text: string) => {
@@ -132,6 +175,14 @@ export default function App() {
               inputMode="numeric"
             />
           </label>
+          <label className="checkbox">
+            <input
+              type="checkbox"
+              checked={remember}
+              onChange={(e) => setRemember(e.target.checked)}
+            />
+            Remember session on this device
+          </label>
           <div className="actions">
             <button
               type="button"
@@ -148,7 +199,7 @@ export default function App() {
           </p>
         </section>
       ) : (
-        <section className="viewer">
+        <section className={`viewer${fullscreen ? " is-fullscreen" : ""}`}>
           <video ref={videoRef} autoPlay playsInline muted />
           <img
             ref={frameRef}
@@ -167,10 +218,15 @@ export default function App() {
             onMouseMove={(e) => {
               if (e.buttons) sendPointer(0, e.clientX, e.clientY);
             }}
+            onContextMenu={(e) => e.preventDefault()}
+            onWheel={onWheel}
           />
           <div className="toolbar">
             <button type="button" onClick={() => setKeyboardOpen(!keyboardOpen)}>
               Keyboard
+            </button>
+            <button type="button" onClick={toggleFullscreen}>
+              {fullscreen ? "Exit fullscreen" : "Fullscreen"}
             </button>
             <button type="button" onClick={disconnect}>
               Disconnect

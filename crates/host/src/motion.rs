@@ -103,3 +103,22 @@ pub fn target_frame_interval(idle: bool, target_fps: u32, idle_fps: u32) -> std:
     let fps = if idle { idle_fps } else { target_fps };
     std::time::Duration::from_secs_f64(1.0 / fps.max(1) as f64)
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn idle_interval_uses_idle_fps() {
+        let d = target_frame_interval(true, 30, 8);
+        assert!((d.as_secs_f64() - 0.125).abs() < 0.001);
+    }
+
+    #[test]
+    fn static_frame_skips_encode() {
+        let mut det = MotionDetector::new(64, 64, 64 * 4);
+        let frame = vec![128u8; 64 * 64 * 4];
+        det.should_encode(&frame, true);
+        assert!(!det.should_encode(&frame, false));
+    }
+}

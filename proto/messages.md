@@ -23,3 +23,12 @@ WebRTC media never transits the signaling server.
 | `pointer` | `x`, `y` (0–1), `action` (0=move, 1=L down, 2=L up, 3=R down, 4=R up) |
 | `key` | `key`, `down` |
 | `wheel` | `delta_x`, `delta_y` |
+
+## HTTP (signaling server, v0.2)
+
+| Path | Response |
+|------|----------|
+| `GET /health` | Plain text liveness |
+| `GET /api/status` | JSON `{ status, version, ws_connections, sessions_active, audit_entries }` |
+| `GET /api/audit` | JSON array of audit events |
+| `GET /metrics` | Prometheus text exposition |

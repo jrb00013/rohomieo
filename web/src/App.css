@@ -93,6 +93,23 @@ button.primary {
   color: var(--muted);
 }
 
+label.checkbox {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 0.9rem;
+  color: var(--text);
+}
+
+label.checkbox input {
+  width: auto;
+  margin: 0;
+}
+
+.viewer.is-fullscreen .toolbar {
+  padding-bottom: max(0.75rem, env(safe-area-inset-bottom));
+}
+
 .viewer {
   position: fixed;
   inset: 0;

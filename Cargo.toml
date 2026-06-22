@@ -4,10 +4,10 @@ members = ["crates/proto", "crates/signaling", "crates/host"]
 default-members = ["crates/signaling", "crates/host"]
 
 [workspace.package]
-version = "0.1.0"
+version = "0.2.0"
 edition = "2021"
 license = "MIT"
-repository = "https://github.com/you/rohomieo"
+repository = "https://github.com/jrb00013/rohomieo"
 
 [workspace.dependencies]
 serde = { version = "1", features = ["derive"] }

@@ -1,0 +1,10 @@
+# Example host config — copy to ~/.config/rohomieo/host.toml
+
+signaling = "wss://127.0.0.1:8443/ws"
+device_name = "My Laptop"
+fps = 30
+idle_fps = 8
+
+# Optional fixed session (omit for random UUID each start)
+# session = "00000000-0000-0000-0000-000000000001"
+# pin = "123456"

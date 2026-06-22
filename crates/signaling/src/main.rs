@@ -1,7 +1,12 @@
+mod api;
+mod audit;
+mod metrics;
 mod session;
 mod ws;
 
 use anyhow::Context;
+use api::{api_audit, api_status, metrics_handler};
+use audit::AuditLog;
 use axum::{
     extract::{ws::WebSocketUpgrade, State},
     response::IntoResponse,
@@ -9,10 +14,11 @@ use axum::{
     Router,
 };
 use clap::Parser;
+use metrics::Metrics;
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use rustls_pemfile::{certs, pkcs8_private_keys};
 use session::SessionStore;
-use std::{net::SocketAddr, path::PathBuf, sync::Arc};
+use std::{net::SocketAddr, path::PathBuf, sync::Arc, time::Duration};
 use tower_http::{
     cors::{Any, CorsLayer},
     services::{ServeDir, ServeFile},
@@ -20,11 +26,17 @@ use tower_http::{
 };
 use tracing::info;
 
+#[derive(Clone)]
+struct AppState {
+    store: Arc<SessionStore>,
+    audit: Arc<AuditLog>,
+}
+
 #[derive(Parser, Debug)]
-#[command(name = "rohomieo-signaling", about = "Rohomieo signaling + static web server")]
+#[command(name = "rohomieo-signaling", about = "Rohomieo signaling + static web server", version)]
 struct Args {
     /// Bind address (use 0.0.0.0 for VPN/LAN access)
-    #[arg(long, default_value = "0.0.0.0:8443")]
+    #[arg(long, default_value = "0.0.0.0:8443", env = "ROHOMIEO_BIND")]
     bind: SocketAddr,
 
     /// Directory with built PWA (`web/dist`)
@@ -32,12 +44,20 @@ struct Args {
     web_root: PathBuf,
 
     /// TLS certificate PEM (optional; HTTP if omitted)
-    #[arg(long)]
+    #[arg(long, env = "ROHOMIEO_CERT")]
     cert: Option<PathBuf>,
 
     /// TLS private key PEM
-    #[arg(long)]
+    #[arg(long, env = "ROHOMIEO_KEY")]
     key: Option<PathBuf>,
+
+    /// Remove stale sessions after this many seconds of inactivity
+    #[arg(long, default_value = "3600", env = "ROHOMIEO_SESSION_TTL_SECS")]
+    session_ttl_secs: u64,
+
+    /// Lock session after this many failed PIN attempts
+    #[arg(long, default_value = "5", env = "ROHOMIEO_MAX_PIN_FAILURES")]
+    max_pin_failures: u32,
 }
 
 #[tokio::main]
@@ -52,7 +72,21 @@ async fn main() -> anyhow::Result<()> {
         .init();
 
     let args = Args::parse();
-    let store = Arc::new(SessionStore::new());
+    let audit = Arc::new(AuditLog::new());
+    let metrics = Arc::new(Metrics::new());
+    let store = Arc::new(SessionStore::with_limits(
+        Arc::clone(&audit),
+        Arc::clone(&metrics),
+        args.max_pin_failures,
+        args.session_ttl_secs,
+    ));
+
+    let state = AppState {
+        store: Arc::clone(&store),
+        audit: Arc::clone(&audit),
+    };
+
+    spawn_ttl_sweeper(Arc::clone(&store));
 
     let web_root = args.web_root.canonicalize().unwrap_or(args.web_root.clone());
     let index = web_root.join("index.html");
@@ -60,7 +94,10 @@ async fn main() -> anyhow::Result<()> {
 
     let app = Router::new()
         .route("/ws", get(ws_handler))
-        .route("/health", get(health))
+        .route("/health", get(health_legacy))
+        .route("/api/status", get(api_status))
+        .route("/api/audit", get(api_audit))
+        .route("/metrics", get(metrics_handler))
         .nest_service("/", serve_dir)
         .layer(
             CorsLayer::new()
@@ -69,10 +106,13 @@ async fn main() -> anyhow::Result<()> {
                 .allow_headers(Any),
         )
         .layer(TraceLayer::new_for_http())
-        .with_state(store);
+        .with_state(state);
 
-    info!("Rohomieo signaling on {}", args.bind);
+    info!("Rohomieo signaling v{} on {}", env!("CARGO_PKG_VERSION"), args.bind);
     info!("Web root: {}", web_root.display());
+    info!(
+        "Endpoints: /ws /health /api/status /api/audit /metrics"
+    );
 
     match (args.cert, args.key) {
         (Some(cert_path), Some(key_path)) => {
@@ -96,15 +136,33 @@ async fn main() -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn health(State(store): State<Arc<SessionStore>>) -> impl IntoResponse {
-    format!("ok ws_connections={}", store.connection_count())
+fn spawn_ttl_sweeper(store: Arc<SessionStore>) {
+    tokio::spawn(async move {
+        let mut interval = tokio::time::interval(Duration::from_secs(300));
+        loop {
+            interval.tick().await;
+            let n = store.sweep_stale();
+            if n > 0 {
+                tracing::debug!("swept {n} stale sessions");
+            }
+        }
+    });
+}
+
+async fn health_legacy(State(state): State<AppState>) -> impl IntoResponse {
+    format!(
+        "ok version={} ws_connections={} sessions={}",
+        env!("CARGO_PKG_VERSION"),
+        state.store.connection_count(),
+        state.store.session_count()
+    )
 }
 
 async fn ws_handler(
     ws: WebSocketUpgrade,
-    State(store): State<Arc<SessionStore>>,
+    State(state): State<AppState>,
 ) -> impl IntoResponse {
-    ws.on_upgrade(move |socket| ws::handle_socket(socket, store))
+    ws.on_upgrade(move |socket| ws::handle_socket(socket, state.store))
 }
 
 fn load_certs(path: &PathBuf) -> anyhow::Result<Vec<CertificateDer<'static>>> {

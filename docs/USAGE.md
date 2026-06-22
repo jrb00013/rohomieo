@@ -1,5 +1,7 @@
 # How to use Rohomieo
 
+See also [ROADMAP.md](ROADMAP.md) for planned features.
+
 ## 1. Install
 
 | Environment | Command |
