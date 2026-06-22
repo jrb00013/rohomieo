@@ -207,6 +207,10 @@ export class RohomieoViewer {
   sendKey(key: string, down: boolean) {
     this.sendInput({ type: "key", key, down });
   }
+
+  sendWheel(deltaX: number, deltaY: number) {
+    this.sendInput({ type: "wheel", delta_x: deltaX, delta_y: deltaY });
+  }
 }
 
 export function normalizedPointer(
