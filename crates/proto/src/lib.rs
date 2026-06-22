@@ -93,3 +93,38 @@ impl InputEvent {
         serde_json::from_str(s)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn roundtrip_register_host() {
+        let msg = SignalMessage::RegisterHost {
+            session_id: "abc".into(),
+            pin: "123456".into(),
+            device_name: Some("desk".into()),
+        };
+        let json = msg.to_json().unwrap();
+        let back = SignalMessage::from_json(&json).unwrap();
+        assert!(matches!(back, SignalMessage::RegisterHost { .. }));
+    }
+
+    #[test]
+    fn roundtrip_wheel_input() {
+        let evt = InputEvent::Wheel {
+            delta_x: 0.0,
+            delta_y: -120.0,
+        };
+        let json = serde_json::to_string(&evt).unwrap();
+        let back = InputEvent::from_json(&json).unwrap();
+        assert!(matches!(back, InputEvent::Wheel { delta_y, .. } if delta_y == -120.0));
+    }
+
+    #[test]
+    fn role_snake_case() {
+        let json = r#"{"type":"registered","role":"viewer","session_id":"x"}"#;
+        let msg = SignalMessage::from_json(json).unwrap();
+        assert!(matches!(msg, SignalMessage::Registered { role: Role::Viewer, .. }));
+    }
+}
