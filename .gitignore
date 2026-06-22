@@ -20,3 +20,4 @@ mobile/build/
 mobile/ios/Pods/
 mobile/ios/.symlinks/
 mobile/pubspec.lock
+web/public/*.png
