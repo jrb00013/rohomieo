@@ -1,0 +1,16 @@
+# Signaling + static PWA (build web first: make web-build)
+services:
+  signaling:
+    build:
+      context: .
+      dockerfile: infra/docker/Dockerfile.signaling
+    ports:
+      - "8443:8443"
+    environment:
+      RUST_LOG: rohomieo_signaling=info
+    volumes:
+      - ./web/dist:/app/web/dist:ro
+    command:
+      - /usr/local/bin/rohomieo-signaling
+      - --bind=0.0.0.0:8443
+      - --web-root=/app/web/dist
