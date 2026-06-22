@@ -1,0 +1,25 @@
+{
+  "annotations": { "list": [] },
+  "title": "Rohomieo Signaling",
+  "uid": "rohomieo-signaling",
+  "version": 1,
+  "panels": [
+    {
+      "title": "WebSocket connections",
+      "type": "stat",
+      "targets": [{ "expr": "rohomieo_ws_connections" }]
+    },
+    {
+      "title": "Active sessions",
+      "type": "stat",
+      "targets": [{ "expr": "rohomieo_sessions_active" }]
+    },
+    {
+      "title": "PIN failures",
+      "type": "graph",
+      "targets": [{ "expr": "rate(rohomieo_pin_failures_total[5m])" }]
+    }
+  ],
+  "schemaVersion": 39,
+  "tags": ["rohomieo"]
+}
