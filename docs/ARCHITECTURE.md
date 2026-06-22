@@ -40,7 +40,18 @@ Build deps (Linux): `libx11-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev li
 ## Security (v1)
 
 - 6-digit PIN per session
+- PIN attempt rate limiting and 5-minute lockout (v0.2)
+- Connection audit log at `/api/audit` (v0.2)
 - No STUN/TURN on public internet (VPN required)
 - Optional TLS on signaling (`--cert` / `--key`)
 
-Future: Ed25519 device keys, connection audit log, Wake-on-LAN.
+Future: Ed25519 device keys, signed session tokens, Wake-on-LAN — see [ROADMAP.md](ROADMAP.md).
+
+## Observability (v0.2)
+
+| Endpoint | Purpose |
+|----------|---------|
+| `GET /health` | Plain-text liveness |
+| `GET /api/status` | JSON version + session counts |
+| `GET /api/audit` | Recent connection events |
+| `GET /metrics` | Prometheus scrape target |
