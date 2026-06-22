@@ -42,6 +42,8 @@ Open **https://127.0.0.1:8443** (or `https://<your-wifi-ip>:8443` on phone), acc
 
 **Full walkthrough (laptop + phone):** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 
+**Roadmap & what's next:** [docs/WHATS_NEXT.md](docs/WHATS_NEXT.md) · [docs/ROADMAP.md](docs/ROADMAP.md)
+
 ## WireGuard (phone off home Wi‑Fi)
 
 [infra/wireguard/README.md](infra/wireguard/README.md)
@@ -57,6 +59,9 @@ cd mobile && flutter create . --platforms=ios && flutter pub get && flutter run 
 ```text
 rohomieo/
   setup.sh                  # dispatcher: --linux | --wsl | --macos | --windows
+  Makefile                  # check, test, web-build
+  docker-compose.yml        # signaling container
+  docs/ROADMAP.md           # phased feature plan
   scripts/setup-linux.sh
   scripts/setup-wsl.sh
   scripts/setup-macos.sh
