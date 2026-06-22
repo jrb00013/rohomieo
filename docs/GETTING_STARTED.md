@@ -2,7 +2,7 @@
 
 Step-by-step guide for **WSL2 + Windows** (recommended) and how to connect from your phone.
 
-For other platforms see [USAGE.md](USAGE.md). Architecture: [ARCHITECTURE.md](ARCHITECTURE.md).
+For other platforms see [USAGE.md](USAGE.md). Architecture: [ARCHITECTURE.md](ARCHITECTURE.md). **What's next:** [WHATS_NEXT.md](WHATS_NEXT.md).
 
 ---
 
