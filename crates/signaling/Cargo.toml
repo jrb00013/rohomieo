@@ -26,3 +26,4 @@ tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
 dashmap = "6"
 rand = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
+chrono = { workspace = true }
