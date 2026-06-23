@@ -33,7 +33,11 @@ struct AppState {
 }
 
 #[derive(Parser, Debug)]
-#[command(name = "rohomieo-signaling", about = "Rohomieo signaling + static web server", version)]
+#[command(
+    name = "rohomieo-signaling",
+    about = "Rohomieo signaling + static web server",
+    version
+)]
 struct Args {
     /// Bind address (use 0.0.0.0 for VPN/LAN access)
     #[arg(long, default_value = "0.0.0.0:8443", env = "ROHOMIEO_BIND")]
@@ -88,7 +92,10 @@ async fn main() -> anyhow::Result<()> {
 
     spawn_ttl_sweeper(Arc::clone(&store));
 
-    let web_root = args.web_root.canonicalize().unwrap_or(args.web_root.clone());
+    let web_root = args
+        .web_root
+        .canonicalize()
+        .unwrap_or(args.web_root.clone());
     let index = web_root.join("index.html");
     let serve_dir = ServeDir::new(&web_root).not_found_service(ServeFile::new(index));
 
@@ -108,11 +115,13 @@ async fn main() -> anyhow::Result<()> {
         .layer(TraceLayer::new_for_http())
         .with_state(state);
 
-    info!("Rohomieo signaling v{} on {}", env!("CARGO_PKG_VERSION"), args.bind);
-    info!("Web root: {}", web_root.display());
     info!(
-        "Endpoints: /ws /health /api/status /api/audit /metrics"
+        "Rohomieo signaling v{} on {}",
+        env!("CARGO_PKG_VERSION"),
+        args.bind
     );
+    info!("Web root: {}", web_root.display());
+    info!("Endpoints: /ws /health /api/status /api/audit /metrics");
 
     match (args.cert, args.key) {
         (Some(cert_path), Some(key_path)) => {
@@ -158,10 +167,7 @@ async fn health_legacy(State(state): State<AppState>) -> impl IntoResponse {
     )
 }
 
-async fn ws_handler(
-    ws: WebSocketUpgrade,
-    State(state): State<AppState>,
-) -> impl IntoResponse {
+async fn ws_handler(ws: WebSocketUpgrade, State(state): State<AppState>) -> impl IntoResponse {
     ws.on_upgrade(move |socket| ws::handle_socket(socket, state.store))
 }
 

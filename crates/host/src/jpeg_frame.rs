@@ -7,8 +7,7 @@ const MAX_STREAM_WIDTH: u32 = 1280;
 
 /// Downscale if needed and encode BGRA (scrap) to JPEG for datachannel fallback.
 pub fn bgra_to_jpeg(bgra: &[u8], width: usize, height: usize, stride: usize) -> Result<Vec<u8>> {
-    let mut img: ImageBuffer<Rgba<u8>, Vec<u8>> =
-        ImageBuffer::new(width as u32, height as u32);
+    let mut img: ImageBuffer<Rgba<u8>, Vec<u8>> = ImageBuffer::new(width as u32, height as u32);
     for y in 0..height {
         for x in 0..width {
             let i = y * stride + x * 4;

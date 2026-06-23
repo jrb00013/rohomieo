@@ -117,9 +117,7 @@ impl SessionStore {
         tx: WsSender,
     ) -> Result<(), String> {
         let mut entry = self.sessions.entry(session_id.clone()).or_insert_with(|| {
-            self.metrics
-                .sessions_active
-                .fetch_add(1, Ordering::Relaxed);
+            self.metrics.sessions_active.fetch_add(1, Ordering::Relaxed);
             Session {
                 pin: pin.clone(),
                 device_name: device_name.clone(),
@@ -230,8 +228,7 @@ impl SessionStore {
             Role::Host => AuditEventKind::HostDisconnected,
             Role::Viewer => AuditEventKind::ViewerDisconnected,
         };
-        self.audit
-            .record(session_id, kind, Some(role), None);
+        self.audit.record(session_id, kind, Some(role), None);
 
         if let Some(mut s) = self.sessions.get_mut(session_id) {
             match role {
@@ -241,25 +238,19 @@ impl SessionStore {
             if s.host.tx.is_none() && s.viewer.tx.is_none() {
                 drop(s);
                 self.sessions.remove(session_id);
-                self.metrics
-                    .sessions_active
-                    .fetch_sub(1, Ordering::Relaxed);
+                self.metrics.sessions_active.fetch_sub(1, Ordering::Relaxed);
             }
         }
     }
 
     pub fn inc_conn(&self) {
         self.connections.fetch_add(1, Ordering::Relaxed);
-        self.metrics
-            .ws_connections
-            .fetch_add(1, Ordering::Relaxed);
+        self.metrics.ws_connections.fetch_add(1, Ordering::Relaxed);
     }
 
     pub fn dec_conn(&self) {
         self.connections.fetch_sub(1, Ordering::Relaxed);
-        self.metrics
-            .ws_connections
-            .fetch_sub(1, Ordering::Relaxed);
+        self.metrics.ws_connections.fetch_sub(1, Ordering::Relaxed);
     }
 
     /// Remove sessions with no peers that exceeded TTL.
@@ -279,9 +270,7 @@ impl SessionStore {
                 self.metrics
                     .sessions_expired
                     .fetch_add(1, Ordering::Relaxed);
-                self.metrics
-                    .sessions_active
-                    .fetch_sub(1, Ordering::Relaxed);
+                self.metrics.sessions_active.fetch_sub(1, Ordering::Relaxed);
                 removed += 1;
                 false
             } else {

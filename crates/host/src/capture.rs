@@ -105,9 +105,7 @@ impl ScreenCapture {
 
 #[cfg(target_os = "macos")]
 pub fn macos_permission_hint() {
-    eprintln!(
-        "macOS: grant Screen Recording to this app in System Settings → Privacy & Security"
-    );
+    eprintln!("macOS: grant Screen Recording to this app in System Settings → Privacy & Security");
 }
 
 #[cfg(not(target_os = "macos"))]

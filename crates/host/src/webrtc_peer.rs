@@ -105,10 +105,12 @@ impl WebRtcHost {
         let input_dc = pc
             .create_data_channel(
                 "input",
-                Some(webrtc::data_channel::data_channel_init::RTCDataChannelInit {
-                    ordered: Some(true),
-                    ..Default::default()
-                }),
+                Some(
+                    webrtc::data_channel::data_channel_init::RTCDataChannelInit {
+                        ordered: Some(true),
+                        ..Default::default()
+                    },
+                ),
             )
             .await?;
 
@@ -128,11 +130,13 @@ impl WebRtcHost {
         let jpeg_dc = pc
             .create_data_channel(
                 "frames",
-                Some(webrtc::data_channel::data_channel_init::RTCDataChannelInit {
-                    ordered: Some(false),
-                    max_retransmits: Some(0),
-                    ..Default::default()
-                }),
+                Some(
+                    webrtc::data_channel::data_channel_init::RTCDataChannelInit {
+                        ordered: Some(false),
+                        max_retransmits: Some(0),
+                        ..Default::default()
+                    },
+                ),
             )
             .await?;
         jpeg_dc.on_open(Box::new(|| {
@@ -155,9 +159,7 @@ impl WebRtcHost {
     pub async fn create_and_send_offer(&self) -> Result<()> {
         let offer = self.pc.create_offer(None).await?;
         self.pc.set_local_description(offer.clone()).await?;
-        self.signaling.send(SignalMessage::Offer {
-            sdp: offer.sdp,
-        });
+        self.signaling.send(SignalMessage::Offer { sdp: offer.sdp });
         Ok(())
     }
 
@@ -195,9 +197,15 @@ impl WebRtcHost {
         let stream_video = Arc::clone(&self.stream_video);
         let video_dc = Arc::clone(&self.video_dc);
         tokio::spawn(async move {
-            if let Err(e) =
-                run_capture_loop(video_track, stream_video, video_dc, target_fps, idle_fps, input_slot)
-                    .await
+            if let Err(e) = run_capture_loop(
+                video_track,
+                stream_video,
+                video_dc,
+                target_fps,
+                idle_fps,
+                input_slot,
+            )
+            .await
             {
                 warn!("capture loop ended: {e}");
             }
