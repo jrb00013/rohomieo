@@ -6,7 +6,7 @@ use crate::motion::MotionDetector;
 use crate::signaling_client::{SignalingClient, SignalingEvent};
 use anyhow::Result;
 use bytes::Bytes;
-use interceptor::registry::Registry;
+use webrtc::interceptor::registry::Registry;
 use rohomieo_proto::{InputEvent, SignalMessage};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
