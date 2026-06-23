@@ -74,10 +74,7 @@ impl AuditLog {
     }
 
     pub fn len(&self) -> usize {
-        self.entries
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-            .len()
+        self.entries.lock().unwrap_or_else(|e| e.into_inner()).len()
     }
 }
 
@@ -95,8 +92,18 @@ mod tests {
     fn ring_buffer_drops_oldest() {
         let log = AuditLog::with_capacity(2);
         log.record("a", AuditEventKind::HostRegistered, Some(Role::Host), None);
-        log.record("b", AuditEventKind::ViewerRegistered, Some(Role::Viewer), None);
-        log.record("c", AuditEventKind::PinFailure, None, Some("bad pin".into()));
+        log.record(
+            "b",
+            AuditEventKind::ViewerRegistered,
+            Some(Role::Viewer),
+            None,
+        );
+        log.record(
+            "c",
+            AuditEventKind::PinFailure,
+            None,
+            Some("bad pin".into()),
+        );
         let recent = log.recent(10);
         assert_eq!(recent.len(), 2);
         assert_eq!(recent[0].session_id, "b");

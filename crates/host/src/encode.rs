@@ -112,9 +112,8 @@ impl H264Encoder {
             .max_frame_rate(30.0)
             .usage_type(UsageType::ScreenContentRealTime)
             .rate_control_mode(RateControlMode::Bitrate);
-        let encoder =
-            Encoder::with_api_config(OpenH264API::from_source(), config)
-                .map_err(|e: Error| anyhow::anyhow!("{e}"))?;
+        let encoder = Encoder::with_api_config(OpenH264API::from_source(), config)
+            .map_err(|e: Error| anyhow::anyhow!("{e}"))?;
         let chroma_w = ((width as usize) + 1) / 2;
         let chroma_h = ((height as usize) + 1) / 2;
         let i420_len = width as usize * height as usize + 2 * chroma_w * chroma_h;
@@ -151,7 +150,8 @@ impl H264Encoder {
             self.height = height as u32;
             let chroma_w = (width + 1) / 2;
             let chroma_h = (height + 1) / 2;
-            self.i420_buf.resize(width * height + 2 * chroma_w * chroma_h, 0);
+            self.i420_buf
+                .resize(width * height + 2 * chroma_w * chroma_h, 0);
             self.encoder.force_intra_frame();
         }
 

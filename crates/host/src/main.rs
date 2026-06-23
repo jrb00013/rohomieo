@@ -16,14 +16,22 @@ use std::sync::Arc;
 use tracing::info;
 
 #[derive(Parser, Debug)]
-#[command(name = "rohomieo-host", about = "Rohomieo remote desktop host agent", version)]
+#[command(
+    name = "rohomieo-host",
+    about = "Rohomieo remote desktop host agent",
+    version
+)]
 struct Args {
     /// Optional TOML config (CLI flags override file values)
     #[arg(long, env = "ROHOMIEO_CONFIG")]
     config: Option<std::path::PathBuf>,
 
     /// WebSocket signaling URL (ws:// or wss://)
-    #[arg(long, default_value = "wss://127.0.0.1:8443/ws", env = "ROHOMIEO_SIGNALING")]
+    #[arg(
+        long,
+        default_value = "wss://127.0.0.1:8443/ws",
+        env = "ROHOMIEO_SIGNALING"
+    )]
     signaling: String,
 
     /// Session ID (share with viewer); random UUID if omitted
@@ -90,13 +98,8 @@ async fn main() -> Result<()> {
     info!("  Connect viewer with same session + PIN");
     info!("═══════════════════════════════════════");
 
-    let client = SignalingClient::connect(
-        &args.signaling,
-        session_id,
-        pin,
-        Some(args.device_name),
-    )
-    .await?;
+    let client =
+        SignalingClient::connect(&args.signaling, session_id, pin, Some(args.device_name)).await?;
 
     let signaling = Arc::new(client);
     webrtc_peer::run_session(signaling, args.fps, args.idle_fps).await
