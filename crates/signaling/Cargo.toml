@@ -18,7 +18,7 @@ serde = { workspace = true }
 serde_json = { workspace = true }
 uuid = { workspace = true }
 futures-util = "0.3"
-axum = { version = "0.7", features = ["ws", "macros"] }
+axum = { version = "0.8", features = ["ws", "macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"

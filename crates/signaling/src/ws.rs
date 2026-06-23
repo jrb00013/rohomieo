@@ -89,11 +89,9 @@ pub async fn handle_socket(socket: WebSocket, store: Arc<SessionStore>) {
                 // Notify host that viewer joined
                 if let Some(host_tx) = store.peer_tx(&sid, Role::Host) {
                     let _ = host_tx.send(
-                        SignalMessage::PeerJoined {
-                            role: Role::Viewer,
-                        }
-                        .to_json()
-                        .unwrap(),
+                        SignalMessage::PeerJoined { role: Role::Viewer }
+                            .to_json()
+                            .unwrap(),
                     );
                 }
                 debug!("viewer registered");
