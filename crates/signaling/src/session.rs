@@ -34,6 +34,7 @@ pub struct SessionStore {
 }
 
 impl SessionStore {
+    #[allow(dead_code)]
     pub fn new(audit: Arc<AuditLog>, metrics: Arc<Metrics>) -> Self {
         Self {
             sessions: DashMap::new(),
@@ -65,6 +66,7 @@ impl SessionStore {
         Arc::clone(&self.metrics)
     }
 
+    #[allow(dead_code)]
     pub fn audit(&self) -> Arc<AuditLog> {
         Arc::clone(&self.audit)
     }
