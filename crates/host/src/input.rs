@@ -37,18 +37,10 @@ impl InputInjector {
                 let py = (y.clamp(0.0, 1.0) * self.screen_h as f64) as i32;
                 self.enigo.move_mouse(px, py, Coordinate::Abs)?;
                 match action {
-                    1 => self
-                        .enigo
-                        .button(Button::Left, Direction::Press)?,
-                    2 => self
-                        .enigo
-                        .button(Button::Left, Direction::Release)?,
-                    3 => self
-                        .enigo
-                        .button(Button::Right, Direction::Press)?,
-                    4 => self
-                        .enigo
-                        .button(Button::Right, Direction::Release)?,
+                    1 => self.enigo.button(Button::Left, Direction::Press)?,
+                    2 => self.enigo.button(Button::Left, Direction::Release)?,
+                    3 => self.enigo.button(Button::Right, Direction::Press)?,
+                    4 => self.enigo.button(Button::Right, Direction::Release)?,
                     _ => {}
                 }
             }

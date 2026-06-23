@@ -125,6 +125,12 @@ mod tests {
     fn role_snake_case() {
         let json = r#"{"type":"registered","role":"viewer","session_id":"x"}"#;
         let msg = SignalMessage::from_json(json).unwrap();
-        assert!(matches!(msg, SignalMessage::Registered { role: Role::Viewer, .. }));
+        assert!(matches!(
+            msg,
+            SignalMessage::Registered {
+                role: Role::Viewer,
+                ..
+            }
+        ));
     }
 }
