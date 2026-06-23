@@ -81,7 +81,10 @@ impl SignalingClient {
                     }
                 };
                 match msg {
-                    SignalMessage::Registered { role, session_id: s } => {
+                    SignalMessage::Registered {
+                        role,
+                        session_id: s,
+                    } => {
                         info!("registered as {:?} session {}", role, s);
                         if let Some(tx) = reg_tx.take() {
                             let _ = tx.send(Ok(()));
