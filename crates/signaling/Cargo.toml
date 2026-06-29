@@ -22,7 +22,7 @@ axum = { version = "0.8", features = ["ws", "macros"] }
 axum-server = { version = "0.7", features = ["tls-rustls"] }
 rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
-tower-http = { version = "0.6", features = ["fs", "cors", "trace"] }
+tower-http = { version = "0.7", features = ["fs", "cors", "trace"] }
 dashmap = "6"
 rand = "0.8"
 clap = { version = "4", features = ["derive", "env"] }
