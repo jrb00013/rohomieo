@@ -6,17 +6,16 @@ Stream and control your computer from your phone over **WireGuard** + **WebRTC**
 
 | Platform | Command |
 |----------|---------|
-| **Auto-detect** | `./setup.sh` |
-| **WSL2** | `./setup.sh --wsl` |
-| **Start session** | `./setup.sh --start` (Windows signaling + host, phone on LAN) |
+| **Install + start** | `./install.sh` (deps, build, Windows allow, start — UAC once) |
+| **Legacy setup** | `./setup.sh` / `./setup.sh --wsl` |
+| **Start session** | `./install.sh` again, or `./setup.sh --start` |
 | **Stop** | `./setup.sh --stop` |
 | **Build Windows exes** | `./scripts/build-windows-host.sh` (no Visual Studio) |
-| **Linux / macOS** | `./setup.sh --linux` / `--macos` |
 
 ```bash
 git clone https://github.com/jrb00013/rohomieo.git ~/rohomieo
 cd ~/rohomieo
-./setup.sh              # or: --wsl | --linux | --macos
+./install.sh            # approve UAC once; later installs skip the prompt
 ```
 
 Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Windows builds the `.exe` host for your real desktop; WSL/Linux/macOS scripts build Unix binaries + signaling.
@@ -38,7 +37,7 @@ source ~/rohomieo/.env.rohomieo
 
 Dev: `./scripts/dev.sh`
 
-Open **https://127.0.0.1:8443** (or `https://<your-wifi-ip>:8443` on phone), accept the cert warning, enter **Session ID** + **PIN** from the host window.
+Open **https://127.0.0.1:8443** (or scan the **QR code** in the host window — opens the phone browser and joins the session), accept the cert warning. Manual connect: enter **Session ID** + **PIN** from the host window.
 
 **Full walkthrough (laptop + phone):** [docs/GETTING_STARTED.md](docs/GETTING_STARTED.md)
 
@@ -58,6 +57,7 @@ cd mobile && flutter create . --platforms=ios && flutter pub get && flutter run 
 
 ```text
 rohomieo/
+  install.sh                # one-shot: deps, build, Windows allow (UAC once), start
   setup.sh                  # dispatcher: --linux | --wsl | --macos | --windows
   Makefile                  # check, test, web-build
   docker-compose.yml        # signaling container
@@ -66,6 +66,7 @@ rohomieo/
   scripts/setup-wsl.sh
   scripts/setup-macos.sh
   scripts/setup-windows.ps1   # Windows host (built via WSL MinGW, no Visual Studio)
+  scripts/windows/install-allow.ps1  # elevated: firewall, Defender, sign, SAC, start
   scripts/start-{linux,wsl,macos}.sh
   crates/{proto,signaling,host}
   web/                  # PWA viewer

@@ -18,6 +18,69 @@ setup_ok()    { echo -e "${GREEN}ok${NC} $*"; }
 setup_warn()  { echo -e "${YELLOW}!${NC} $*"; }
 setup_err()   { echo -e "${RED}ERROR:${NC} $*" >&2; }
 
+# PowerShell from bash:
+#   pwsh            — cross-platform PowerShell (Linux, macOS, Windows Core)
+#   pwsh.exe        — PowerShell Core on Windows (via WSL / Git Bash)
+#   powershell.exe  — Windows built-in (WSL, Git Bash, Cygwin)
+setup_powershell_bin() {
+  if command -v pwsh &>/dev/null; then
+    echo pwsh
+    return 0
+  fi
+  if command -v pwsh.exe &>/dev/null; then
+    echo pwsh.exe
+    return 0
+  fi
+  if command -v powershell.exe &>/dev/null; then
+    echo powershell.exe
+    return 0
+  fi
+  return 1
+}
+
+# Windows-side binary only (UAC / Win32 APIs from WSL) — prefer .exe hosts
+setup_powershell_windows_bin() {
+  if command -v pwsh.exe &>/dev/null; then
+    echo pwsh.exe
+    return 0
+  fi
+  if command -v powershell.exe &>/dev/null; then
+    echo powershell.exe
+    return 0
+  fi
+  if command -v pwsh &>/dev/null; then
+    case "$(uname -s)" in
+      MINGW*|MSYS*|CYGWIN*)
+        echo pwsh
+        return 0
+        ;;
+    esac
+  fi
+  return 1
+}
+
+# Run a .ps1:  pwsh -File ./script.ps1   OR   powershell.exe -File ./script.ps1
+setup_ps_file() {
+  local bin
+  bin=$(setup_powershell_bin) || {
+    setup_warn "PowerShell not found (install pwsh, or use powershell.exe on WSL/Windows)"
+    return 1
+  }
+  "$bin" -NoProfile -ExecutionPolicy Bypass -File "$@"
+}
+
+setup_ps_command() {
+  local bin
+  bin=$(setup_powershell_bin) || return 1
+  "$bin" -NoProfile -Command "$@"
+}
+
+setup_ps_windows_command() {
+  local bin
+  bin=$(setup_powershell_windows_bin) || return 1
+  "$bin" -NoProfile -Command "$@"
+}
+
 setup_detect_platform() {
   IS_WSL=false
   IS_LINUX=false
@@ -34,7 +97,7 @@ setup_detect_platform() {
 setup_ensure_lf() {
   # Fix CRLF if repo was checked out on Windows
   local f
-  for f in "$ROHOMIEO_ROOT"/setup.sh "$ROHOMIEO_ROOT"/scripts/*.sh; do
+  for f in "$ROHOMIEO_ROOT"/install.sh "$ROHOMIEO_ROOT"/setup.sh "$ROHOMIEO_ROOT"/scripts/*.sh; do
     [[ -f "$f" ]] && sed -i 's/\r$//' "$f" 2>/dev/null || true
   done
 }
@@ -73,15 +136,23 @@ setup_apt_build_deps() {
     build-essential pkg-config curl git ca-certificates openssl
     libx11-dev libxcb1-dev libxcb-shm0-dev libxcb-randr0-dev libxdo-dev
   )
-  setup_info "Installing apt build dependencies (sudo)..."
-  sudo apt-get update -qq
   if command -v node &>/dev/null && command -v npm &>/dev/null; then
     setup_ok "Using existing Node $(node --version) — not installing apt nodejs/npm"
   else
     setup_info "Installing nodejs from apt (no Node detected)..."
     pkgs+=(nodejs npm)
   fi
-  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${pkgs[@]}"
+  local missing=() p
+  for p in "${pkgs[@]}"; do
+    dpkg -s "$p" &>/dev/null || dpkg -s "${p%%:*}" &>/dev/null || missing+=("$p")
+  done
+  if [[ ${#missing[@]} -eq 0 ]]; then
+    setup_ok "apt build deps already installed"
+    return 0
+  fi
+  setup_info "Installing apt build dependencies (sudo): ${missing[*]}"
+  sudo apt-get update -qq
+  sudo DEBIAN_FRONTEND=noninteractive apt-get install -y "${missing[@]}"
   setup_ok "apt packages"
 }
 
@@ -146,8 +217,9 @@ setup_install_wireguard_macos_brew() {
 
 setup_install_wireguard_windows_app() {
   local win_ps=""
-  command -v powershell.exe &>/dev/null && win_ps="powershell.exe"
-  command -v pwsh.exe &>/dev/null && [[ -z "$win_ps" ]] && win_ps="pwsh.exe"
+  command -v pwsh.exe &>/dev/null && win_ps="pwsh.exe"
+  command -v powershell.exe &>/dev/null && [[ -z "$win_ps" ]] && win_ps="powershell.exe"
+  command -v pwsh &>/dev/null && [[ -z "$win_ps" ]] && win_ps="pwsh"
   [[ -n "$win_ps" ]] || return 0
 
   setup_info "Installing WireGuard for Windows (winget)..."
@@ -226,12 +298,22 @@ setup_write_env() {
 export ROHOMIEO_ROOT="$ROHOMIEO_ROOT"
 export ROHOMIEO_PLATFORM="${ROHOMIEO_PLATFORM:-linux}"
 export ROHOMIEO_BIND="${ROHOMIEO_BIND:-0.0.0.0:8443}"
-export ROHOMIEO_SIGNALING_URL="${ROHOMIEO_SIGNALING_URL:-ws://127.0.0.1:8443/ws}"
+export ROHOMIEO_SIGNALING_URL="${ROHOMIEO_SIGNALING_URL:-wss://127.0.0.1:8443/ws}"
 export ROHOMIEO_WEB_ROOT="$ROHOMIEO_ROOT/web/dist"
 export ROHOMIEO_CERT="$ROHOMIEO_ROOT/infra/certs/cert.pem"
 export ROHOMIEO_KEY="$ROHOMIEO_ROOT/infra/certs/key.pem"
 export ROHOMIEO_WSL_WINDOWS_IP="${win_ip:-}"
 ${extra_env}
+EOF
+  # systemd EnvironmentFile= cannot parse `export` lines
+  cat >"$ROHOMIEO_ROOT/.env.rohomieo.systemd" <<EOF
+ROHOMIEO_ROOT=$ROHOMIEO_ROOT
+ROHOMIEO_PLATFORM=${ROHOMIEO_PLATFORM:-linux}
+ROHOMIEO_BIND=${ROHOMIEO_BIND:-0.0.0.0:8443}
+ROHOMIEO_SIGNALING_URL=${ROHOMIEO_SIGNALING_URL:-wss://127.0.0.1:8443/ws}
+ROHOMIEO_WEB_ROOT=$ROHOMIEO_ROOT/web/dist
+ROHOMIEO_CERT=$ROHOMIEO_ROOT/infra/certs/cert.pem
+ROHOMIEO_KEY=$ROHOMIEO_ROOT/infra/certs/key.pem
 EOF
   setup_ok ".env.rohomieo"
 }
@@ -268,6 +350,11 @@ setup_install_systemd_user() {
   sed "s|@ROOT@|$ROHOMIEO_ROOT|g; s|@BIN@|$ROHOMIEO_ROOT/.local/bin|g" \
     "$ROHOMIEO_ROOT/infra/systemd/rohomieo-signaling.service.in" \
     >"$HOME/.config/systemd/user/rohomieo-signaling.service"
+  # Prefer KEY=value env file for systemd
+  if [[ -f "$ROHOMIEO_ROOT/.env.rohomieo.systemd" ]]; then
+    sed -i "s|EnvironmentFile=-.*|EnvironmentFile=-$ROHOMIEO_ROOT/.env.rohomieo.systemd|" \
+      "$HOME/.config/systemd/user/rohomieo-signaling.service" 2>/dev/null || true
+  fi
   systemctl --user daemon-reload 2>/dev/null || true
   systemctl --user enable rohomieo-signaling.service 2>/dev/null || true
   setup_ok "systemd user unit rohomieo-signaling (systemctl --user start rohomieo-signaling)"
@@ -300,16 +387,18 @@ setup_invoke_windows() {
   local ps1="$ROHOMIEO_ROOT/scripts/setup-windows.ps1"
   [[ -f "$ps1" ]] || return 0
   local win_ps=""
-  command -v powershell.exe &>/dev/null && win_ps="powershell.exe"
-  command -v pwsh.exe &>/dev/null && [[ -z "$win_ps" ]] && win_ps="pwsh.exe"
+  command -v pwsh.exe &>/dev/null && win_ps="pwsh.exe"
+  command -v powershell.exe &>/dev/null && [[ -z "$win_ps" ]] && win_ps="powershell.exe"
+  command -v pwsh &>/dev/null && [[ -z "$win_ps" ]] && win_ps="pwsh"
   if [[ -z "$win_ps" ]]; then
-    setup_warn "Run on Windows: powershell -File scripts\\setup-windows.ps1"
+    setup_warn "Run on Windows: pwsh -File scripts/setup-windows.ps1  (or powershell.exe -File ...)"
     return 0
   fi
-  setup_info "Windows companion setup (host.exe via WSL MinGW build)..."
+  setup_info "Windows companion setup via $win_ps -File (host.exe via WSL MinGW build)..."
   local win_script win_root
   win_script=$(wslpath -w "$ps1" 2>/dev/null) || win_script="$ps1"
   win_root=$(wslpath -w "$ROHOMIEO_ROOT" 2>/dev/null) || win_root="$ROHOMIEO_ROOT"
+  # pwsh -File ./script.ps1  OR  powershell.exe -File ./script.ps1
   if "$win_ps" -NoProfile -ExecutionPolicy Bypass -File "$win_script" -RepoRoot "$win_root"; then
     setup_ok "Windows setup finished"
   else

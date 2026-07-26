@@ -2,6 +2,7 @@ mod capture;
 mod config;
 mod encode;
 mod input;
+mod invite;
 mod jpeg_frame;
 mod motion;
 mod platform;
@@ -34,6 +35,11 @@ struct Args {
     )]
     signaling: String,
 
+    /// Public HTTPS base for phone QR (e.g. https://192.168.1.20:8443).
+    /// Default: LAN IP inferred from this machine + port from --signaling.
+    #[arg(long, env = "ROHOMIEO_PUBLIC_URL")]
+    public_url: Option<String>,
+
     /// Session ID (share with viewer); random UUID if omitted
     #[arg(long)]
     session: Option<String>,
@@ -41,6 +47,10 @@ struct Args {
     /// 6-digit PIN; random if omitted
     #[arg(long)]
     pin: Option<String>,
+
+    /// Skip printing the phone invite QR in the terminal
+    #[arg(long, env = "ROHOMIEO_NO_QR")]
+    no_qr: bool,
 
     #[arg(long, default_value = "My Laptop", env = "ROHOMIEO_DEVICE_NAME")]
     device_name: String,
@@ -89,17 +99,33 @@ async fn main() -> Result<()> {
     let session_id = args
         .session
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
-    let pin = args.pin.unwrap_or_else(|| gen_pin());
+    let pin = args.pin.unwrap_or_else(gen_pin);
+
+    let join = invite::join_url(
+        &args.signaling,
+        &session_id,
+        &pin,
+        args.public_url.as_deref(),
+    );
 
     info!("═══════════════════════════════════════");
     info!("  Rohomieo host");
     info!("  Session: {}", session_id);
     info!("  PIN:     {}", pin);
-    info!("  Connect viewer with same session + PIN");
+    info!("  Phone:   {}", join);
     info!("═══════════════════════════════════════");
 
-    let client =
-        SignalingClient::connect(&args.signaling, session_id, pin, Some(args.device_name)).await?;
+    if !args.no_qr {
+        invite::print_invite_qr(&join);
+    }
+
+    let client = SignalingClient::connect(
+        &args.signaling,
+        session_id,
+        pin,
+        Some(args.device_name),
+    )
+    .await?;
 
     let signaling = Arc::new(client);
     webrtc_peer::run_session(signaling, args.fps, args.idle_fps).await

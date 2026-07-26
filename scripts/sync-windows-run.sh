@@ -1,11 +1,29 @@
 #!/usr/bin/env bash
-# Copy exes + DLLs + web + certs to %LOCALAPPDATA%\rohomieo-run (native path, no UNC).
+# Stage binaries on NTFS (no overwrite of running exes), then elevate once:
+# kill → promote staging → allow (firewall/SAC/sign) → start.
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export ROHOMIEO_ROOT="$ROOT"
 
-WIN_USER="${WIN_USER:-josep}"
+detect_win_user() {
+  if [[ -n "${WIN_USER:-}" ]]; then echo "$WIN_USER"; return; fi
+  local u=""
+  if command -v pwsh.exe &>/dev/null; then
+    u=$(pwsh.exe -NoProfile -Command '$env:USERNAME' 2>/dev/null | tr -d '\r')
+  elif command -v powershell.exe &>/dev/null; then
+    u=$(powershell.exe -NoProfile -Command '$env:USERNAME' 2>/dev/null | tr -d '\r')
+  elif command -v pwsh &>/dev/null; then
+    u=$(pwsh -NoProfile -Command '$env:USERNAME' 2>/dev/null | tr -d '\r')
+  fi
+  if [[ -z "$u" ]] && [[ -d /mnt/c/Users ]]; then
+    u=$(ls /mnt/c/Users 2>/dev/null | grep -Ev '^(Public|Default|Default User|All Users|desktop.ini)$' | head -1 || true)
+  fi
+  echo "${u:-josep}"
+}
+
+WIN_USER="$(detect_win_user)"
 RUN="/mnt/c/Users/${WIN_USER}/AppData/Local/rohomieo-run"
+STAGE="$RUN/staging"
 SRC="$ROOT/target/release"
 
 [[ -f "$SRC/rohomieo-signaling.exe" ]] || {
@@ -16,12 +34,17 @@ SRC="$ROOT/target/release"
 # shellcheck source=lib/bundle-windows-runtime.sh
 source "$ROOT/scripts/lib/bundle-windows-runtime.sh"
 
-rm -rf "$RUN/certs"
-mkdir -p "$RUN/web/dist" "$RUN/certs"
+rm -rf "$STAGE"
+mkdir -p "$STAGE/web/dist" "$STAGE/certs" "$RUN"
 for f in rohomieo-signaling.exe rohomieo-host.exe libunwind.dll libc++.dll libwinpthread-1.dll; do
-  [[ -f "$SRC/$f" ]] && cp -f "$SRC/$f" "$RUN/"
+  [[ -f "$SRC/$f" ]] && cp -f "$SRC/$f" "$STAGE/"
 done
-cp -a "$ROOT/web/dist/." "$RUN/web/dist/"
-cp -f "$ROOT/infra/certs/cert.pem" "$ROOT/infra/certs/key.pem" "$RUN/certs/"
+cp -a "$ROOT/web/dist/." "$STAGE/web/dist/"
+cp -f "$ROOT/infra/certs/cert.pem" "$ROOT/infra/certs/key.pem" "$STAGE/certs/"
 
-echo "ok synced -> C:\\Users\\${WIN_USER}\\AppData\\Local\\rohomieo-run"
+# Also refresh non-locked assets in live run dir now
+mkdir -p "$RUN/web/dist" "$RUN/certs"
+cp -a "$ROOT/web/dist/." "$RUN/web/dist/" 2>/dev/null || true
+cp -f "$ROOT/infra/certs/cert.pem" "$ROOT/infra/certs/key.pem" "$RUN/certs/" 2>/dev/null || true
+
+echo "ok staged -> C:\\Users\\${WIN_USER}\\AppData\\Local\\rohomieo-run\\staging"

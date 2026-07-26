@@ -18,24 +18,26 @@ rohomieo_ensure_env() {
 
 # Forward Windows LAN :8443 -> WSL (needs Admin once). Opens UAC if missing.
 rohomieo_ensure_lan_portproxy() {
-  command -v powershell.exe &>/dev/null || return 0
+  local ps_win
+  ps_win=$(setup_powershell_windows_bin 2>/dev/null) || return 0
   local wsl_ip
   wsl_ip=$(hostname -I 2>/dev/null | awk '{print $1}')
   [[ -n "$wsl_ip" ]] || return 0
   local has_proxy
-  has_proxy=$(powershell.exe -NoProfile -Command \
+  has_proxy=$("$ps_win" -NoProfile -Command \
     "(netsh interface portproxy show all | Select-String '8443').Count" 2>/dev/null | tr -d '\r')
   [[ "${has_proxy:-0}" != "0" ]] && return 0
   setup_start_warn "LAN port 8443 not forwarded — run as Administrator (see below)"
   local script_w
   script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/enable-phone-access.ps1" 2>/dev/null) || return 0
-  powershell.exe -NoProfile -Command \
-    "Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$script_w')" \
+  # pwsh -File ...  OR  powershell.exe -File ...
+  "$ps_win" -NoProfile -Command \
+    "Start-Process -FilePath '$ps_win' -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$script_w')" \
     2>/dev/null || true
   echo ""
   echo "  If no UAC prompt, open Admin PowerShell and run:"
-  echo "    cd \\\\wsl.localhost\\Ubuntu\\home\\josep\\rohomieo"
-  echo "    powershell -ExecutionPolicy Bypass -File .\\scripts\\windows\\enable-phone-access.ps1"
+  echo "    pwsh -File .\\scripts\\windows\\enable-phone-access.ps1"
+  echo "    # or: powershell.exe -File .\\scripts\\windows\\enable-phone-access.ps1"
   echo ""
 }
 
@@ -105,7 +107,8 @@ rohomieo_ensure_windows_host_build() {
 }
 
 rohomieo_start_windows_bridge() {
-  command -v powershell.exe &>/dev/null || return 0
+  local ps_win
+  ps_win=$(setup_powershell_windows_bin 2>/dev/null) || return 0
   rohomieo_ensure_windows_host_build || true
   setup_start_info "Syncing to Windows AppData (exes + DLLs + web)..."
   if ! "$ROHOMIEO_ROOT/scripts/sync-windows-run.sh" >>"$ROHOMIEO_ROOT/var/log/windows-build.log" 2>&1; then
@@ -118,37 +121,35 @@ rohomieo_start_windows_bridge() {
   fw_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/enable-phone-access.ps1" 2>/dev/null) || true
   # One-shot: try Admin firewall + portproxy cleanup (phone uses Windows :8443; portproxy not required)
   if [[ -n "${fw_w:-}" ]]; then
-    powershell.exe -NoProfile -Command \
-      "Start-Process powershell -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$fw_w')" \
+    "$ps_win" -NoProfile -Command \
+      "Start-Process -FilePath '$ps_win' -Verb RunAs -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$fw_w')" \
       2>/dev/null || true
   fi
-  setup_start_info "Starting signaling + host on Windows..."
-  powershell.exe -NoProfile -Command \
-    "Start-Process powershell -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$bridge_w')" \
+  setup_start_info "Starting signaling + host on Windows ($ps_win -File)..."
+  "$ps_win" -NoProfile -Command \
+    "Start-Process -FilePath '$ps_win' -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$bridge_w')" \
     2>/dev/null || setup_start_warn "Could not launch run-bridge.ps1"
   sleep 2
 }
 
 rohomieo_start_windows_host_window() {
-  local win_ps="" script_w=""
-  command -v powershell.exe &>/dev/null && win_ps="powershell.exe"
-  [[ -n "$win_ps" ]] || return 0
+  local ps_win script_w=""
+  ps_win=$(setup_powershell_windows_bin 2>/dev/null) || return 0
   rohomieo_ensure_windows_host_build
   script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/windows/start-host.ps1" 2>/dev/null) || return 0
-  setup_start_info "Opening Windows host (new PowerShell window)..."
-  "$win_ps" -NoProfile -Command \
-    "Start-Process powershell -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$script_w')" \
-    2>/dev/null || setup_start_warn "Could not launch Windows host — run: powershell -File scripts\\windows\\start-host.ps1"
+  setup_start_info "Opening Windows host ($ps_win -File)..."
+  "$ps_win" -NoProfile -Command \
+    "Start-Process -FilePath '$ps_win' -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$script_w')" \
+    2>/dev/null || setup_start_warn "Could not launch Windows host — run: pwsh -File scripts/windows/start-host.ps1"
 }
 
 rohomieo_start_windows_stack_window() {
-  local win_ps="" script_w=""
-  command -v powershell.exe &>/dev/null && win_ps="powershell.exe"
-  [[ -n "$win_ps" ]] || return 0
+  local ps_win script_w=""
+  ps_win=$(setup_powershell_windows_bin 2>/dev/null) || return 0
   script_w=$(wslpath -w "$ROHOMIEO_ROOT/scripts/start-windows-host.ps1" 2>/dev/null) || return 0
-  setup_start_info "Opening Windows signaling + host (new windows)..."
-  "$win_ps" -NoProfile -Command \
-    "Start-Process powershell -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$script_w')" \
+  setup_start_info "Opening Windows signaling + host ($ps_win -File)..."
+  "$ps_win" -NoProfile -Command \
+    "Start-Process -FilePath '$ps_win' -ArgumentList @('-NoExit','-ExecutionPolicy','Bypass','-File','$script_w')" \
     2>/dev/null || true
 }
 
@@ -200,8 +201,8 @@ rohomieo_start_wsl() {
   echo ""
   setup_start_ok "WSL stack running"
   local lan_ip=""
-  if command -v powershell.exe &>/dev/null; then
-    lan_ip=$(powershell.exe -NoProfile -Command \
+  if setup_powershell_windows_bin &>/dev/null; then
+    lan_ip=$(setup_ps_windows_command \
       "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -match '^192\.168\.|^10\.' -and \$_.InterfaceAlias -notmatch 'WSL|vEthernet' } | Select-Object -First 1).IPAddress" 2>/dev/null \
       | tr -d '\r')
   fi

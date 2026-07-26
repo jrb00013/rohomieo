@@ -105,7 +105,7 @@ async fn main() -> anyhow::Result<()> {
         .route("/api/status", get(api_status))
         .route("/api/audit", get(api_audit))
         .route("/metrics", get(metrics_handler))
-        .nest_service("/", serve_dir)
+        .fallback_service(serve_dir)
         .layer(
             CorsLayer::new()
                 .allow_origin(Any)

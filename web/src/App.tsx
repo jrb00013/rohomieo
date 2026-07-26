@@ -8,19 +8,80 @@ const DEFAULT_WS =
     ? `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:8443/ws`
     : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
 
+type Invite = {
+  sessionId?: string;
+  pin?: string;
+  auto: boolean;
+  signalingUrl?: string;
+};
+
+/** Survives React StrictMode remount (which would otherwise clear ?s=&p= then re-read empty). */
+let cachedInvite: Invite | null = null;
+
+function readInviteFromUrl(): Invite {
+  if (cachedInvite) return cachedInvite;
+  if (typeof location === "undefined") {
+    cachedInvite = { auto: false };
+    return cachedInvite;
+  }
+
+  // Prefer query string; also accept hash (? after #) for picky scanners / redirects.
+  const raw =
+    location.search.replace(/^\?/, "") ||
+    (location.hash.includes("?")
+      ? location.hash.slice(location.hash.indexOf("?") + 1)
+      : location.hash.replace(/^#/, ""));
+  const q = new URLSearchParams(raw);
+  const sessionId = (q.get("s") ?? q.get("session") ?? undefined) || undefined;
+  const pin = (q.get("p") ?? q.get("pin") ?? undefined) || undefined;
+  const auto =
+    q.get("auto") === "1" ||
+    q.get("connect") === "1" ||
+    (!!sessionId && !!pin && q.get("auto") !== "0");
+  const ws = q.get("ws") ?? q.get("signaling") ?? undefined;
+
+  cachedInvite = {
+    sessionId: sessionId?.trim() || undefined,
+    pin: pin?.trim() || undefined,
+    auto,
+    signalingUrl: ws ?? undefined,
+  };
+
+  // Strip invite from the address bar only after we've cached it.
+  if (cachedInvite.sessionId || cachedInvite.pin) {
+    try {
+      const url = new URL(location.href);
+      url.search = "";
+      url.hash = "";
+      history.replaceState({}, "", url.pathname);
+    } catch {
+      /* ignore */
+    }
+  }
+
+  return cachedInvite;
+}
+
+
 export default function App() {
+  const invite = readInviteFromUrl();
   const saved = loadSession();
   const [signalingUrl, setSignalingUrl] = useState(
-    saved.signalingUrl ?? DEFAULT_WS
+    invite.signalingUrl ?? saved.signalingUrl ?? DEFAULT_WS
   );
-  const [sessionId, setSessionId] = useState(saved.sessionId ?? "");
-  const [pin, setPin] = useState(saved.pin ?? "");
+  const [sessionId, setSessionId] = useState(
+    invite.sessionId ?? saved.sessionId ?? ""
+  );
+  const [pin, setPin] = useState(invite.pin ?? saved.pin ?? "");
   const [state, setState] = useState<ConnectionState>("disconnected");
-  const [detail, setDetail] = useState("");
+  const [detail, setDetail] = useState(
+    invite.auto && invite.sessionId && invite.pin ? "Joining from QR…" : ""
+  );
   const [keyboardOpen, setKeyboardOpen] = useState(false);
   const [typed, setTyped] = useState("");
   const [remember, setRemember] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const autoStarted = useRef(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLImageElement>(null);
@@ -77,6 +138,14 @@ export default function App() {
     viewerRef.current = viewer;
     viewer.connect(signalingUrl, sessionId.trim(), pin.trim());
   }, [signalingUrl, sessionId, pin, remember]);
+
+  useEffect(() => {
+    if (!invite.auto || autoStarted.current) return;
+    if (!sessionId.trim() || !pin.trim()) return;
+    autoStarted.current = true;
+    const t = window.setTimeout(() => connect(), 50);
+    return () => clearTimeout(t);
+  }, [invite.auto, sessionId, pin, connect]);
 
   const disconnect = () => viewerRef.current?.disconnect();
 
@@ -146,9 +215,9 @@ export default function App() {
         <section className="panel connect-panel">
           <h1>Rohomieo</h1>
           <p className="hint">
-            Same Wi‑Fi: open <code>https://YOUR-LAPTOP-IP:8443</code> (accept the
-            certificate warning once). Session ID + PIN are in the{" "}
-            <strong>rohomieo-host</strong> window on the PC — not WSL.
+            Scan the QR in the <strong>rohomieo-host</strong> window on your PC,
+            or open <code>https://YOUR-LAPTOP-IP:8443</code> and enter Session +
+            PIN (accept the certificate warning once).
           </p>
           <label>
             Signaling WebSocket

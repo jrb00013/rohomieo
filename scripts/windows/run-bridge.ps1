@@ -23,6 +23,14 @@ if (-not $SkipFirewall) {
     }
 }
 
+# Clear MOTW so Smart App Control / Defender are less likely to block
+Get-ChildItem -Path $Run -File -ErrorAction SilentlyContinue |
+    Where-Object { $_.Extension -in '.exe', '.dll' } |
+    ForEach-Object {
+        Unblock-File -Path $_.FullName -ErrorAction SilentlyContinue
+        Remove-Item -LiteralPath ($_.FullName + ":Zone.Identifier") -Force -ErrorAction SilentlyContinue
+    }
+
 # Stop old instances
 Get-Process rohomieo-signaling, rohomieo-host -ErrorAction SilentlyContinue | Stop-Process -Force
 
@@ -53,10 +61,16 @@ if (-not $ready) {
 Write-Host "OK  signaling on :8443" -ForegroundColor Green
 
 Write-Host "Starting host..." -ForegroundColor Cyan
-Start-Process -FilePath (Join-Path $Run "rohomieo-host.exe") `
-    -WorkingDirectory $Run `
-    -ArgumentList @("--signaling", "wss://127.0.0.1:8443/ws") `
-    -WindowStyle Normal
+try {
+    Start-Process -FilePath (Join-Path $Run "rohomieo-host.exe") `
+        -WorkingDirectory $Run `
+        -ArgumentList @("--signaling", "wss://127.0.0.1:8443/ws") `
+        -WindowStyle Normal -ErrorAction Stop
+} catch {
+    Write-Warning "Host blocked by App Control. From WSL run: ./install.sh --allow"
+    Write-Warning "Or Windows Security → Smart App Control → Off / Evaluation, then re-run."
+    throw
+}
 
 $lan = (Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.IPAddress -match '^192\.168\.' -and $_.InterfaceAlias -notmatch 'WSL|vEthernet' } |
