@@ -3,7 +3,7 @@ use image::codecs::jpeg::JpegEncoder;
 use image::imageops::FilterType;
 use image::{ImageBuffer, Rgba};
 
-const MAX_STREAM_WIDTH: u32 = 1280;
+const MAX_STREAM_WIDTH: u32 = 960;
 
 /// Downscale if needed and encode BGRA (scrap) to JPEG for datachannel fallback.
 pub fn bgra_to_jpeg(bgra: &[u8], width: usize, height: usize, stride: usize) -> Result<Vec<u8>> {
@@ -30,12 +30,26 @@ pub fn bgra_to_jpeg(bgra: &[u8], width: usize, height: usize, stride: usize) -> 
     };
 
     let mut out = Vec::new();
-    let mut enc = JpegEncoder::new_with_quality(&mut out, 72);
+    let mut enc = JpegEncoder::new_with_quality(&mut out, 55);
     enc.encode(
         img.as_raw(),
         img.width(),
         img.height(),
         image::ExtendedColorType::Rgba8,
     )?;
+    // Keep under common WebRTC/SCTP comfort zone even if peer advertises 64KiB.
+    if out.len() > 60_000 {
+        out.clear();
+        let nw = (img.width() * 3 / 4).max(320);
+        let nh = (img.height() * 3 / 4).max(180);
+        let small = image::imageops::resize(&img, nw, nh, FilterType::Triangle);
+        let mut enc = JpegEncoder::new_with_quality(&mut out, 45);
+        enc.encode(
+            small.as_raw(),
+            small.width(),
+            small.height(),
+            image::ExtendedColorType::Rgba8,
+        )?;
+    }
     Ok(out)
 }

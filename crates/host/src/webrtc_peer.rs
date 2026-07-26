@@ -16,7 +16,7 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264};
-use webrtc::api::setting_engine::SettingEngine;
+use webrtc::api::setting_engine::{SctpMaxMessageSize, SettingEngine};
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::data_channel::data_channel_state::RTCDataChannelState;
@@ -40,6 +40,7 @@ pub struct WebRtcHost {
     video_track: Arc<TrackLocalStaticSample>,
     signaling: Arc<SignalingClient>,
     stream_video: Arc<AtomicBool>,
+    capture_alive: Arc<AtomicBool>,
     video_dc: Arc<Mutex<Option<Arc<RTCDataChannel>>>>,
 }
 
@@ -103,6 +104,8 @@ impl WebRtcHost {
         );
         setting.set_interface_filter(Box::new(|name| ice_iface_ok(name)));
         setting.set_ip_filter(Box::new(|ip| ice_ip_ok(ip)));
+        // Phone JPEG frames are often >64KiB; default SCTP cap silently drops them → black screen.
+        setting.set_sctp_max_message_size_can_send(SctpMaxMessageSize::Bounded(256 * 1024));
         if let Some(lan) = invite::guess_lan_ip() {
             info!("ICE host candidate pinned to LAN {lan}");
             setting.set_nat_1to1_ips(vec![lan.to_string()], RTCIceCandidateType::Host);
@@ -199,8 +202,9 @@ impl WebRtcHost {
                 "frames",
                 Some(
                     webrtc::data_channel::data_channel_init::RTCDataChannelInit {
-                        ordered: Some(false),
-                        max_retransmits: Some(0),
+                        // Reliable: phones usually can't decode OpenH264 and depend on JPEG.
+                        // Unreliable + max_retransmits=0 dropped large frames → black screen.
+                        ordered: Some(true),
                         ..Default::default()
                     },
                 ),
@@ -213,12 +217,14 @@ impl WebRtcHost {
         *video_dc_slot.lock().await = Some(jpeg_dc);
 
         let stream_video = Arc::new(AtomicBool::new(false));
+        let capture_alive = Arc::new(AtomicBool::new(true));
 
         Ok(Self {
             pc,
             video_track,
             signaling,
             stream_video,
+            capture_alive,
             video_dc: video_dc_slot,
         })
     }
@@ -262,11 +268,13 @@ impl WebRtcHost {
     ) {
         let video_track = Arc::clone(&self.video_track);
         let stream_video = Arc::clone(&self.stream_video);
+        let capture_alive = Arc::clone(&self.capture_alive);
         let video_dc = Arc::clone(&self.video_dc);
         tokio::spawn(async move {
             if let Err(e) = run_capture_loop(
                 video_track,
                 stream_video,
+                capture_alive,
                 video_dc,
                 target_fps,
                 idle_fps,
@@ -283,6 +291,7 @@ impl WebRtcHost {
 async fn run_capture_loop(
     video_track: Arc<TrackLocalStaticSample>,
     stream_video: Arc<AtomicBool>,
+    capture_alive: Arc<AtomicBool>,
     video_dc: Arc<Mutex<Option<Arc<RTCDataChannel>>>>,
     target_fps: u32,
     idle_fps: u32,
@@ -291,6 +300,7 @@ async fn run_capture_loop(
     let mut cap = ScreenCapture::primary()?;
     let (w, h) = cap.dimensions();
     let mut stride = cap.stride();
+    info!("screen capture {w}x{h} stride={stride}");
 
     {
         let mut guard = input_slot.lock().await;
@@ -308,7 +318,7 @@ async fn run_capture_loop(
     let mut h264_frames: u64 = 0;
     let mut jpeg_frames: u64 = 0;
 
-    loop {
+    while capture_alive.load(Ordering::SeqCst) {
         ticker.tick().await;
 
         if !stream_video.load(Ordering::SeqCst) {
@@ -358,10 +368,12 @@ async fn run_capture_loop(
             if let Ok(jpeg) = jpeg_frame::bgra_to_jpeg(&bgra, w, h, stride) {
                 let dc = video_dc.lock().await.clone();
                 if let Some(dc) = dc {
-                    if dc.ready_state() == RTCDataChannelState::Open
-                        && dc.send(&Bytes::from(jpeg)).await.is_ok()
-                    {
-                        jpeg_frames += 1;
+                    if dc.ready_state() == RTCDataChannelState::Open {
+                        let n = jpeg.len();
+                        match dc.send(&Bytes::from(jpeg)).await {
+                            Ok(_) => jpeg_frames += 1,
+                            Err(e) => warn!("JPEG frame send failed ({n} bytes): {e}"),
+                        }
                     }
                 }
             }
@@ -374,6 +386,7 @@ async fn run_capture_loop(
             );
         }
     }
+    Ok(())
 }
 
 pub async fn run_session(
@@ -391,6 +404,7 @@ pub async fn run_session(
             SignalingEvent::PeerJoined => {
                 if let Some(old) = host.take() {
                     old.stream_video.store(false, Ordering::SeqCst);
+                    old.capture_alive.store(false, Ordering::SeqCst);
                     let _ = old.pc.close().await;
                 }
                 info!("viewer joined — new peer connection + offer");

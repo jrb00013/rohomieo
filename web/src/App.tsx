@@ -147,6 +147,7 @@ export default function App() {
           img.src = url;
           img.style.display = "block";
         }
+        // Phones often get a black H.264 video element; JPEG is the real picture.
         if (videoRef.current) videoRef.current.style.display = "none";
       },
     });
