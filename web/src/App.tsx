@@ -123,14 +123,18 @@ export default function App() {
   const stageRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<RohomieoViewer | null>(null);
   const oskRef = useRef<HTMLInputElement>(null);
+  const typedRef = useRef("");
+  const oskComposingRef = useRef(false);
   const textFocusRef = useRef(false);
   const softKeyTimerRef = useRef<number | null>(null);
   const fingerStartRef = useRef<{ x: number; y: number } | null>(null);
+  const keyboardOpenRef = useRef(false);
 
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
   zoomRef.current = zoom;
   panRef.current = pan;
+  keyboardOpenRef.current = keyboardOpen;
 
   const pinchRef = useRef<{
     startDist: number;
@@ -139,6 +143,40 @@ export default function App() {
     startMid: { x: number; y: number };
   } | null>(null);
   const oneFingerRef = useRef(false);
+
+  const clearOskBuffer = useCallback(() => {
+    typedRef.current = "";
+    setTyped("");
+    const el = oskRef.current;
+    if (el && el.value) el.value = "";
+  }, []);
+
+  /** Diff previous vs next OSK text and inject only the delta (code-point safe). */
+  const syncOskToRemote = useCallback((prev: string, next: string) => {
+    if (prev === next) return;
+    const a = [...prev];
+    const b = [...next];
+    let i = 0;
+    while (i < a.length && i < b.length && a[i] === b[i]) i++;
+    for (let k = i; k < a.length; k++) {
+      viewerRef.current?.sendKey("Backspace", true);
+      viewerRef.current?.sendKey("Backspace", false);
+    }
+    for (let k = i; k < b.length; k++) {
+      viewerRef.current?.sendKey(b[k], true);
+      viewerRef.current?.sendKey(b[k], false);
+    }
+  }, []);
+
+  const applyOskValue = useCallback(
+    (next: string) => {
+      const prev = typedRef.current;
+      syncOskToRemote(prev, next);
+      typedRef.current = next;
+      setTyped(next);
+    },
+    [syncOskToRemote]
+  );
 
   const openSoftKeyboard = useCallback(() => {
     setKeyboardOpen(true);
@@ -151,14 +189,14 @@ export default function App() {
   const closeSoftKeyboard = useCallback(() => {
     textFocusRef.current = false;
     setKeyboardOpen(false);
-    setTyped("");
+    clearOskBuffer();
     oskRef.current?.blur();
-  }, []);
+  }, [clearOskBuffer]);
 
   /** Focus during the touch gesture so iOS/Android will actually raise the keyboard. */
   const armSoftKeyboardForTap = useCallback(() => {
-    // Focus the (nearly invisible) capture input in this user-gesture turn.
-    // Don't show the OSK chrome until the host confirms a text field.
+    // Fresh buffer so the first typed char diffs against "" (not a stale leftover).
+    clearOskBuffer();
     oskRef.current?.focus({ preventScroll: true });
     if (softKeyTimerRef.current) window.clearTimeout(softKeyTimerRef.current);
     softKeyTimerRef.current = window.setTimeout(() => {
@@ -168,7 +206,7 @@ export default function App() {
         setKeyboardOpen(false);
       }
     }, 650);
-  }, []);
+  }, [clearOskBuffer]);
 
   const applyHostTextFocus = useCallback(
     (focused: boolean) => {
@@ -472,6 +510,14 @@ export default function App() {
   useEffect(() => {
     if (!connected) return;
     const shouldIgnore = (e: KeyboardEvent) => {
+      // Mobile soft keyboards often fire a capture-phase keydown with
+      // Unidentified/Process before the <input> is the event target. preventDefault
+      // there swallows the first character; let the OSK input handle typing instead.
+      if (e.isComposing || e.key === "Process" || e.key === "Unidentified") {
+        return true;
+      }
+      if (keyboardOpenRef.current) return true;
+      if (document.activeElement === oskRef.current) return true;
       const t = e.target;
       return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
     };
@@ -624,28 +670,22 @@ export default function App() {
               inputMode="text"
               value={typed}
               aria-label="Remote keyboard"
-              onChange={(e) => {
-                const next = e.target.value;
-                const prev = typed;
-                if (next.length > prev.length) {
-                  const added = next.slice(prev.length);
-                  for (const ch of added) {
-                    viewerRef.current?.sendKey(ch, true);
-                    viewerRef.current?.sendKey(ch, false);
-                  }
-                } else if (next.length < prev.length) {
-                  for (let i = 0; i < prev.length - next.length; i++) {
-                    viewerRef.current?.sendKey("Backspace", true);
-                    viewerRef.current?.sendKey("Backspace", false);
-                  }
-                }
-                setTyped(next);
+              onCompositionStart={() => {
+                oskComposingRef.current = true;
+              }}
+              onCompositionEnd={(e) => {
+                oskComposingRef.current = false;
+                applyOskValue(e.currentTarget.value);
+              }}
+              onInput={(e) => {
+                if (oskComposingRef.current) return;
+                applyOskValue(e.currentTarget.value);
               }}
               onKeyDown={(e) => {
                 if (e.key === "Enter") {
                   viewerRef.current?.sendKey("Enter", true);
                   viewerRef.current?.sendKey("Enter", false);
-                  setTyped("");
+                  clearOskBuffer();
                   e.preventDefault();
                 }
               }}
@@ -659,7 +699,7 @@ export default function App() {
                 onClick={() => {
                   viewerRef.current?.sendKey("Enter", true);
                   viewerRef.current?.sendKey("Enter", false);
-                  setTyped("");
+                  clearOskBuffer();
                 }}
               >
                 Send
