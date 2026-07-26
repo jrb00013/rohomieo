@@ -1,27 +1,34 @@
 use anyhow::Result;
 use enigo::{Axis, Button, Coordinate, Direction, Enigo, Key, Keyboard, Mouse, Settings};
 use rohomieo_proto::InputEvent;
-use tracing::warn;
+use tracing::{info, warn};
 
 pub struct InputInjector {
     enigo: Enigo,
-    screen_w: i32,
-    screen_h: i32,
+    /// Screen size in the coordinate space Enigo Absolute mouse uses (logical DPI).
+    mouse_w: i32,
+    mouse_h: i32,
 }
 
 impl InputInjector {
-    pub fn new(screen_w: i32, screen_h: i32) -> Result<Self> {
+    pub fn new(_capture_w: i32, _capture_h: i32) -> Result<Self> {
         let enigo = Enigo::new(&Settings::default())?;
+        // scrap/DXGI is often physical pixels; Enigo Absolute uses GetSystemMetrics
+        // (logical). Mixing them makes touch look "not 1:1" on scaled displays.
+        let (mouse_w, mouse_h) = enigo.main_display()?;
+        info!("input mouse space {mouse_w}x{mouse_h} (capture was {_capture_w}x{_capture_h})");
         Ok(Self {
             enigo,
-            screen_w,
-            screen_h,
+            mouse_w,
+            mouse_h,
         })
     }
 
-    pub fn update_dimensions(&mut self, w: i32, h: i32) {
-        self.screen_w = w;
-        self.screen_h = h;
+    pub fn update_dimensions(&mut self, _w: i32, _h: i32) {
+        if let Ok((w, h)) = self.enigo.main_display() {
+            self.mouse_w = w;
+            self.mouse_h = h;
+        }
     }
 
     pub fn handle(&mut self, event: InputEvent) {
@@ -33,8 +40,10 @@ impl InputInjector {
     fn handle_inner(&mut self, event: InputEvent) -> Result<()> {
         match event {
             InputEvent::Pointer { x, y, action } => {
-                let px = (x.clamp(0.0, 1.0) * self.screen_w as f64) as i32;
-                let py = (y.clamp(0.0, 1.0) * self.screen_h as f64) as i32;
+                let px = (x.clamp(0.0, 1.0) * (self.mouse_w.saturating_sub(1)) as f64).round()
+                    as i32;
+                let py = (y.clamp(0.0, 1.0) * (self.mouse_h.saturating_sub(1)) as f64).round()
+                    as i32;
                 self.enigo.move_mouse(px, py, Coordinate::Abs)?;
                 match action {
                     1 => self.enigo.button(Button::Left, Direction::Press)?,

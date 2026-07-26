@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { ConnectionState, normalizedPointer, RohomieoViewer } from "./webrtc";
+import { ConnectionState, RohomieoViewer } from "./webrtc";
 import { loadSession, saveSession } from "./storage";
 import "./App.css";
 
@@ -7,6 +7,10 @@ const DEFAULT_WS =
   typeof location !== "undefined" && location.port === "5173"
     ? `${location.protocol === "https:" ? "wss" : "ws"}://${location.hostname}:8443/ws`
     : `${location.protocol === "https:" ? "wss" : "ws"}://${location.host}/ws`;
+
+const ZOOM_MIN = 1;
+const ZOOM_MAX = 4;
+const ZOOM_STEP = 0.35;
 
 type Invite = {
   sessionId?: string;
@@ -25,7 +29,6 @@ function readInviteFromUrl(): Invite {
     return cachedInvite;
   }
 
-  // Prefer query string; also accept hash (? after #) for picky scanners / redirects.
   const raw =
     location.search.replace(/^\?/, "") ||
     (location.hash.includes("?")
@@ -47,7 +50,6 @@ function readInviteFromUrl(): Invite {
     signalingUrl: ws ?? undefined,
   };
 
-  // Strip invite from the address bar only after we've cached it.
   if (cachedInvite.sessionId || cachedInvite.pin) {
     try {
       const url = new URL(location.href);
@@ -62,19 +64,33 @@ function readInviteFromUrl(): Invite {
   return cachedInvite;
 }
 
+function clamp(n: number, lo: number, hi: number) {
+  return Math.min(hi, Math.max(lo, n));
+}
+
+/** Desktop 0–1 coords from a tap, using the transformed stage's on-screen box (1:1 with pixels). */
+function pointerOnStage(
+  stage: HTMLElement,
+  clientX: number,
+  clientY: number
+): { x: number; y: number } | null {
+  const r = stage.getBoundingClientRect();
+  if (r.width < 2 || r.height < 2) return null;
+  const x = (clientX - r.left) / r.width;
+  const y = (clientY - r.top) / r.height;
+  if (x < -0.02 || x > 1.02 || y < -0.02 || y > 1.02) return null;
+  return { x: clamp(x, 0, 1), y: clamp(y, 0, 1) };
+}
 
 export default function App() {
   const invite = readInviteFromUrl();
   const saved = loadSession();
-  // QR / deep-link joins must use THIS page's host for signaling — never a
-  // remembered wss://127.0.0.1 from a previous laptop browser session.
   const initialWs =
     invite.signalingUrl ??
     (invite.sessionId || invite.auto
       ? DEFAULT_WS
       : saved.signalingUrl ?? DEFAULT_WS);
   const [signalingUrl, setSignalingUrl] = useState(() => {
-    // Phone opened LAN URL but still had localhost saved — force page host.
     if (
       typeof location !== "undefined" &&
       !/^(127\.0\.0\.1|localhost)$/i.test(location.hostname) &&
@@ -96,13 +112,29 @@ export default function App() {
   const [typed, setTyped] = useState("");
   const [remember, setRemember] = useState(true);
   const [fullscreen, setFullscreen] = useState(false);
+  const [zoom, setZoom] = useState(1);
+  const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [mediaAspect, setMediaAspect] = useState(16 / 10);
   const autoStarted = useRef(false);
 
   const videoRef = useRef<HTMLVideoElement>(null);
   const frameRef = useRef<HTMLImageElement>(null);
-  const surfaceRef = useRef<HTMLDivElement>(null);
+  const viewportRef = useRef<HTMLDivElement>(null);
+  const stageRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<RohomieoViewer | null>(null);
-  const mediaAspectRef = useRef<number>(16 / 10);
+
+  const zoomRef = useRef(zoom);
+  const panRef = useRef(pan);
+  zoomRef.current = zoom;
+  panRef.current = pan;
+
+  const pinchRef = useRef<{
+    startDist: number;
+    startZoom: number;
+    startPan: { x: number; y: number };
+    startMid: { x: number; y: number };
+  } | null>(null);
+  const oneFingerRef = useRef(false);
 
   useEffect(() => {
     const v = viewerRef.current;
@@ -114,6 +146,34 @@ export default function App() {
     document.addEventListener("fullscreenchange", onFs);
     return () => document.removeEventListener("fullscreenchange", onFs);
   }, []);
+
+  const layoutStage = useCallback(() => {
+    const viewport = viewportRef.current;
+    const stage = stageRef.current;
+    if (!viewport || !stage) return;
+    const vw = viewport.clientWidth;
+    const vh = viewport.clientHeight;
+    if (vw < 2 || vh < 2) return;
+    const viewAspect = vw / vh;
+    let w: number;
+    let h: number;
+    if (viewAspect > mediaAspect) {
+      h = vh;
+      w = vh * mediaAspect;
+    } else {
+      w = vw;
+      h = vw / mediaAspect;
+    }
+    stage.style.width = `${w}px`;
+    stage.style.height = `${h}px`;
+  }, [mediaAspect]);
+
+  useEffect(() => {
+    layoutStage();
+    const ro = new ResizeObserver(() => layoutStage());
+    if (viewportRef.current) ro.observe(viewportRef.current);
+    return () => ro.disconnect();
+  }, [layoutStage, state]);
 
   const connect = useCallback(() => {
     if (!sessionId.trim() || !pin.trim()) {
@@ -127,6 +187,8 @@ export default function App() {
         pin: pin.trim(),
       });
     }
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
     const viewer = new RohomieoViewer({
       onState: (s, d) => {
         setState(s);
@@ -138,6 +200,11 @@ export default function App() {
         el.srcObject = stream;
         el.muted = true;
         el.playsInline = true;
+        el.onloadedmetadata = () => {
+          if (el.videoWidth > 0 && el.videoHeight > 0) {
+            setMediaAspect(el.videoWidth / el.videoHeight);
+          }
+        };
         void el.play().catch(() => {
           setDetail("Tap the screen if video does not start");
         });
@@ -147,13 +214,12 @@ export default function App() {
         if (img) {
           img.onload = () => {
             if (img.naturalWidth > 0 && img.naturalHeight > 0) {
-              mediaAspectRef.current = img.naturalWidth / img.naturalHeight;
+              setMediaAspect(img.naturalWidth / img.naturalHeight);
             }
           };
           img.src = url;
           img.style.display = "block";
         }
-        // Phones often get a black H.264 video element; JPEG is the real picture.
         if (videoRef.current) videoRef.current.style.display = "none";
       },
     });
@@ -161,9 +227,6 @@ export default function App() {
     viewer.connect(signalingUrl, sessionId.trim(), pin.trim());
   }, [signalingUrl, sessionId, pin, remember]);
 
-  // Mark started only when connect() actually runs. React StrictMode remounts
-  // clear the timeout; if we flipped the flag on schedule, remount would skip
-  // forever and leave "Joining from QR…" stuck on disconnected.
   useEffect(() => {
     if (!invite.auto) return;
     if (!sessionId.trim() || !pin.trim()) return;
@@ -186,24 +249,128 @@ export default function App() {
     }
   };
 
-  const sendPointer = (action: number, clientX: number, clientY: number) => {
-    const el = surfaceRef.current;
-    if (!el || !viewerRef.current) return;
-    const { x, y } = normalizedPointer(
-      el,
-      clientX,
-      clientY,
-      mediaAspectRef.current
-    );
-    viewerRef.current.sendInput({ type: "pointer", x, y, action });
+  const setZoomAround = (nextZoom: number, focusClientX?: number, focusClientY?: number) => {
+    const viewport = viewportRef.current;
+    const z0 = zoomRef.current;
+    const z1 = clamp(nextZoom, ZOOM_MIN, ZOOM_MAX);
+    if (!viewport || Math.abs(z1 - z0) < 0.001) {
+      setZoom(z1);
+      if (z1 <= 1.001) setPan({ x: 0, y: 0 });
+      return;
+    }
+    const r = viewport.getBoundingClientRect();
+    const fx = (focusClientX ?? r.left + r.width / 2) - r.left - r.width / 2;
+    const fy = (focusClientY ?? r.top + r.height / 2) - r.top - r.height / 2;
+    const p0 = panRef.current;
+    // Keep the focus point stable under scale change (origin at viewport center).
+    const p1 = {
+      x: fx - ((fx - p0.x) * z1) / z0,
+      y: fy - ((fy - p0.y) * z1) / z0,
+    };
+    setZoom(z1);
+    if (z1 <= 1.001) setPan({ x: 0, y: 0 });
+    else setPan(p1);
   };
 
-  const onTouch = (e: React.TouchEvent) => {
+  const zoomIn = () => setZoomAround(zoomRef.current + ZOOM_STEP);
+  const zoomOut = () => setZoomAround(zoomRef.current - ZOOM_STEP);
+  const zoomReset = () => {
+    setZoom(1);
+    setPan({ x: 0, y: 0 });
+  };
+
+  const sendPointer = (action: number, clientX: number, clientY: number) => {
+    const stage = stageRef.current;
+    if (!stage || !viewerRef.current) return;
+    const pt = pointerOnStage(stage, clientX, clientY);
+    if (!pt) return;
+    viewerRef.current.sendInput({ type: "pointer", x: pt.x, y: pt.y, action });
+  };
+
+  const touchDist = (
+    a: { clientX: number; clientY: number },
+    b: { clientX: number; clientY: number }
+  ) => {
+    const dx = a.clientX - b.clientX;
+    const dy = a.clientY - b.clientY;
+    return Math.hypot(dx, dy);
+  };
+
+  const onTouchStart = (e: React.TouchEvent) => {
     e.preventDefault();
+    if (e.touches.length >= 2) {
+      oneFingerRef.current = false;
+      const a = e.touches[0];
+      const b = e.touches[1];
+      pinchRef.current = {
+        startDist: touchDist(a, b),
+        startZoom: zoomRef.current,
+        startPan: { ...panRef.current },
+        startMid: {
+          x: (a.clientX + b.clientX) / 2,
+          y: (a.clientY + b.clientY) / 2,
+        },
+      };
+      return;
+    }
+    pinchRef.current = null;
+    oneFingerRef.current = true;
     const t = e.changedTouches[0];
-    if (!t) return;
-    const action = e.type === "touchstart" ? 1 : e.type === "touchend" ? 2 : 0;
-    sendPointer(action, t.clientX, t.clientY);
+    if (t) sendPointer(1, t.clientX, t.clientY);
+  };
+
+  const onTouchMove = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length >= 2 && pinchRef.current) {
+      const a = e.touches[0];
+      const b = e.touches[1];
+      const dist = touchDist(a, b);
+      const midX = (a.clientX + b.clientX) / 2;
+      const midY = (a.clientY + b.clientY) / 2;
+      const scale = dist / Math.max(1, pinchRef.current.startDist);
+      const nextZoom = clamp(
+        pinchRef.current.startZoom * scale,
+        ZOOM_MIN,
+        ZOOM_MAX
+      );
+      const z0 = pinchRef.current.startZoom;
+      const viewport = viewportRef.current?.getBoundingClientRect();
+      if (viewport && z0 > 0) {
+        const fx =
+          pinchRef.current.startMid.x - viewport.left - viewport.width / 2;
+        const fy =
+          pinchRef.current.startMid.y - viewport.top - viewport.height / 2;
+        const p0 = pinchRef.current.startPan;
+        const p1 = {
+          x:
+            fx -
+            ((fx - p0.x) * nextZoom) / z0 +
+            (midX - pinchRef.current.startMid.x),
+          y:
+            fy -
+            ((fy - p0.y) * nextZoom) / z0 +
+            (midY - pinchRef.current.startMid.y),
+        };
+        setZoom(nextZoom);
+        setPan(nextZoom <= 1.001 ? { x: 0, y: 0 } : p1);
+      } else {
+        setZoomAround(nextZoom, midX, midY);
+      }
+      return;
+    }
+    if (!oneFingerRef.current) return;
+    const t = e.changedTouches[0];
+    if (t) sendPointer(0, t.clientX, t.clientY);
+  };
+
+  const onTouchEnd = (e: React.TouchEvent) => {
+    e.preventDefault();
+    if (e.touches.length < 2) pinchRef.current = null;
+    if (e.touches.length === 0 && oneFingerRef.current) {
+      const t = e.changedTouches[0];
+      if (t) sendPointer(2, t.clientX, t.clientY);
+      oneFingerRef.current = false;
+    }
   };
 
   const onMouse = (e: React.MouseEvent) => {
@@ -224,6 +391,11 @@ export default function App() {
 
   const onWheel = (e: React.WheelEvent) => {
     e.preventDefault();
+    if (e.ctrlKey || e.metaKey) {
+      const delta = e.deltaY > 0 ? -ZOOM_STEP : ZOOM_STEP;
+      setZoomAround(zoomRef.current + delta, e.clientX, e.clientY);
+      return;
+    }
     viewerRef.current?.sendWheel(e.deltaX, e.deltaY);
   };
 
@@ -318,19 +490,29 @@ export default function App() {
         </section>
       ) : (
         <section className={`viewer${fullscreen ? " is-fullscreen" : ""}`}>
-          <video ref={videoRef} autoPlay playsInline muted />
-          <img
-            ref={frameRef}
-            className="frame-fallback"
-            alt=""
-            style={{ display: "none" }}
-          />
+          <div ref={viewportRef} className="viewport">
+            <div
+              ref={stageRef}
+              className="stage"
+              style={{
+                transform: `translate(${pan.x}px, ${pan.y}px) scale(${zoom})`,
+              }}
+            >
+              <video ref={videoRef} autoPlay playsInline muted />
+              <img
+                ref={frameRef}
+                className="frame-fallback"
+                alt=""
+                style={{ display: "none" }}
+              />
+            </div>
+          </div>
           <div
-            ref={surfaceRef}
             className="touch-surface"
-            onTouchStart={onTouch}
-            onTouchMove={onTouch}
-            onTouchEnd={onTouch}
+            onTouchStart={onTouchStart}
+            onTouchMove={onTouchMove}
+            onTouchEnd={onTouchEnd}
+            onTouchCancel={onTouchEnd}
             onMouseDown={onMouse}
             onMouseUp={onMouse}
             onMouseMove={(e) => {
@@ -340,11 +522,20 @@ export default function App() {
             onWheel={onWheel}
           />
           <div className="toolbar">
+            <button type="button" onClick={zoomOut} aria-label="Zoom out">
+              −
+            </button>
+            <button type="button" onClick={zoomReset} aria-label="Reset zoom">
+              {Math.round(zoom * 100)}%
+            </button>
+            <button type="button" onClick={zoomIn} aria-label="Zoom in">
+              +
+            </button>
             <button type="button" onClick={() => setKeyboardOpen(!keyboardOpen)}>
               Keyboard
             </button>
             <button type="button" onClick={toggleFullscreen}>
-              {fullscreen ? "Exit fullscreen" : "Fullscreen"}
+              {fullscreen ? "Exit" : "Full"}
             </button>
             <button type="button" onClick={disconnect}>
               Disconnect

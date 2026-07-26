@@ -114,15 +114,34 @@ label.checkbox input {
   position: fixed;
   inset: 0;
   background: #000;
+  overflow: hidden;
 }
 
-.viewer video,
-.viewer .frame-fallback {
+.viewport {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  overflow: hidden;
+  z-index: 1;
+}
+
+.stage {
+  position: relative;
+  flex: 0 0 auto;
+  transform-origin: center center;
+  will-change: transform;
+  background: #000;
+}
+
+.stage video,
+.stage .frame-fallback {
   position: absolute;
   inset: 0;
   width: 100%;
   height: 100%;
-  object-fit: contain;
+  object-fit: fill;
   pointer-events: none;
 }
 
@@ -139,10 +158,18 @@ label.checkbox input {
   left: 0;
   right: 0;
   display: flex;
-  gap: 0.5rem;
-  padding: 0.75rem;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  padding: 0.65rem 0.75rem;
+  padding-bottom: max(0.65rem, env(safe-area-inset-bottom));
   background: linear-gradient(transparent, rgba(0, 0, 0, 0.85));
   z-index: 3;
+}
+
+.toolbar button {
+  padding: 0.55rem 0.7rem;
+  min-width: 2.4rem;
+  font-size: 0.9rem;
 }
 
 .osk {
