@@ -201,10 +201,13 @@ start_wsl_windows_stack() {
 
 
 stop_port_8443_conflicts() {
-  # Prefer Rohomieo's :8443 — stop stale WSL signaling (old path or this path)
+  # Prefer Windows :8443 for phone LAN. WSL systemd on 8443 is fatal: host
+  # registers via 127.0.0.1 → wslrelay → WSL, while the phone hits Windows
+  # 192.168.x → "session not found" after retries.
   stop_windows_rohomieo
   if command -v systemctl &>/dev/null; then
     systemctl --user stop rohomieo-signaling.service 2>/dev/null || true
+    systemctl --user disable rohomieo-signaling.service 2>/dev/null || true
   fi
   local pid
   pid=$(ss -tlnp 2>/dev/null | awk '/:8443/ {print}' | grep -oP 'pid=\K[0-9]+' | head -1 || true)

@@ -356,6 +356,14 @@ setup_install_systemd_user() {
       "$HOME/.config/systemd/user/rohomieo-signaling.service" 2>/dev/null || true
   fi
   systemctl --user daemon-reload 2>/dev/null || true
+  # On WSL + Windows desktop capture, enabling this steals :8443 via wslrelay
+  # and phones get "session not found" against the empty Windows process.
+  if [[ "${IS_WSL:-false}" == "true" ]] && [[ "${ROHOMIEO_SKIP_WINDOWS:-}" != "1" ]]; then
+    systemctl --user disable rohomieo-signaling.service 2>/dev/null || true
+    systemctl --user stop rohomieo-signaling.service 2>/dev/null || true
+    setup_ok "systemd unit installed but left disabled (Windows owns :8443)"
+    return 0
+  fi
   systemctl --user enable rohomieo-signaling.service 2>/dev/null || true
   setup_ok "systemd user unit rohomieo-signaling (systemctl --user start rohomieo-signaling)"
 }

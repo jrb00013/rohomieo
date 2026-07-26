@@ -187,10 +187,26 @@ rohomieo_start_wsl() {
     exec "$ROHOMIEO_ROOT/scripts/start-wsl-bridge.sh"
   fi
   # Phone on Wi-Fi hits Windows LAN IP — run signaling+host on Windows (not WSL portproxy).
+  # Kill WSL systemd too: localhost:8443 is wslrelay→WSL while LAN hits Windows.
+  if command -v systemctl &>/dev/null; then
+    systemctl --user stop rohomieo-signaling.service 2>/dev/null || true
+    systemctl --user disable rohomieo-signaling.service 2>/dev/null || true
+  fi
   if rohomieo_pid_running "$ROHOMIEO_ROOT/var/run/signaling.pid"; then
     kill "$(cat "$ROHOMIEO_ROOT/var/run/signaling.pid")" 2>/dev/null || true
     rm -f "$ROHOMIEO_ROOT/var/run/signaling.pid"
     setup_start_ok "stopped WSL signaling (using Windows :8443 for LAN)"
+  fi
+  local wsl_pid
+  wsl_pid=$(ss -tlnp 2>/dev/null | awk '/:8443/ {print}' | grep -oP 'pid=\K[0-9]+' | head -1 || true)
+  if [[ -n "${wsl_pid:-}" ]]; then
+    local wsl_cmd
+    wsl_cmd=$(ps -p "$wsl_pid" -o comm= 2>/dev/null || true)
+    if [[ "$wsl_cmd" == *rohomieo* ]]; then
+      kill "$wsl_pid" 2>/dev/null || true
+      setup_start_ok "freed WSL :8443 (pid $wsl_pid)"
+      sleep 1
+    fi
   fi
   if rohomieo_pid_running "$ROHOMIEO_ROOT/var/run/host.pid"; then
     kill "$(cat "$ROHOMIEO_ROOT/var/run/host.pid")" 2>/dev/null || true
