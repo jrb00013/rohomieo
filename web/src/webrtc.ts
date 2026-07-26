@@ -1,4 +1,4 @@
-import { InputEvent, send, SignalMessage } from "./proto";
+import { HostEvent, InputEvent, send, SignalMessage } from "./proto";
 
 export type ConnectionState =
   | "disconnected"
@@ -14,6 +14,8 @@ export interface ViewerCallbacks {
   onVideo: (stream: MediaStream) => void;
   /** JPEG frames over the "frames" datachannel (phone-friendly fallback). */
   onFrame?: (url: string) => void;
+  /** Host says a remote text field has (or lost) focus — raise soft keyboard. */
+  onTextFocus?: (focused: boolean) => void;
 }
 
 const SESSION_NOT_FOUND_RETRIES = 8;
@@ -194,6 +196,20 @@ export class RohomieoViewer {
       if (ch.label === "input") {
         this.dc = ch;
         ch.onopen = () => this.cb.onState("connected", "ready");
+        ch.onmessage = (e) => {
+          try {
+            const raw =
+              typeof e.data === "string"
+                ? e.data
+                : new TextDecoder().decode(e.data as ArrayBuffer);
+            const msg = JSON.parse(raw) as HostEvent;
+            if (msg?.type === "text_focus") {
+              this.cb.onTextFocus?.(!!msg.focused);
+            }
+          } catch {
+            /* ignore non-JSON */
+          }
+        };
       }
     };
 

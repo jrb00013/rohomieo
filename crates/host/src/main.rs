@@ -7,6 +7,7 @@ mod jpeg_frame;
 mod motion;
 mod platform;
 mod signaling_client;
+mod text_focus;
 mod webrtc_peer;
 
 use anyhow::Result;

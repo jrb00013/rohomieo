@@ -25,6 +25,9 @@ export type InputEvent =
   | { type: "key"; key: string; down: boolean }
   | { type: "wheel"; delta_x: number; delta_y: number };
 
+/** Host → viewer on the input DataChannel. */
+export type HostEvent = { type: "text_focus"; focused: boolean };
+
 export function send(ws: WebSocket, msg: SignalMessage) {
   ws.send(JSON.stringify(msg));
 }

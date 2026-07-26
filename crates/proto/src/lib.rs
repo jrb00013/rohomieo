@@ -71,6 +71,14 @@ pub enum InputEvent {
     },
 }
 
+/// Host → viewer control messages on the same "input" DataChannel.
+#[derive(Debug, Clone, Serialize, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum HostEvent {
+    /// Remote caret / editable control focused — phone should raise soft keyboard.
+    TextFocus { focused: bool },
+}
+
 /// Optional cursor overlay when video is throttled.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct CursorOverlay {
@@ -91,6 +99,12 @@ impl SignalMessage {
 impl InputEvent {
     pub fn from_json(s: &str) -> Result<Self, serde_json::Error> {
         serde_json::from_str(s)
+    }
+}
+
+impl HostEvent {
+    pub fn to_json(&self) -> Result<String, serde_json::Error> {
+        serde_json::to_string(self)
     }
 }
 
@@ -132,5 +146,12 @@ mod tests {
                 ..
             }
         ));
+    }
+
+    #[test]
+    fn text_focus_host_event() {
+        let evt = HostEvent::TextFocus { focused: true };
+        let json = evt.to_json().unwrap();
+        assert_eq!(json, r#"{"type":"text_focus","focused":true}"#);
     }
 }

@@ -5,9 +5,10 @@ use crate::invite;
 use crate::jpeg_frame;
 use crate::motion::MotionDetector;
 use crate::signaling_client::{SignalingClient, SignalingEvent};
+use crate::text_focus;
 use anyhow::Result;
 use bytes::Bytes;
-use rohomieo_proto::{InputEvent, SignalMessage};
+use rohomieo_proto::{HostEvent, InputEvent, SignalMessage};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -188,21 +189,50 @@ impl WebRtcHost {
         // MUST use the same slot the capture loop fills — a local empty Mutex
         // made every touch/key parse OK then get dropped (injector always None).
         let input_for_dc = Arc::clone(&input_slot);
-        input_dc.on_open(Box::new(|| {
-            info!("input datachannel open (touch/keyboard)");
-            Box::pin(async {})
-        }));
+        let text_focus_state = Arc::new(AtomicBool::new(false));
+        let input_dc_out = Arc::clone(&input_dc);
+        let focus_state_for_msg = Arc::clone(&text_focus_state);
+        input_dc.on_open({
+            let input_dc_out = Arc::clone(&input_dc_out);
+            let text_focus_state = Arc::clone(&text_focus_state);
+            Box::new(move || {
+                info!("input datachannel open (touch/keyboard)");
+                let input_dc_out = Arc::clone(&input_dc_out);
+                let text_focus_state = Arc::clone(&text_focus_state);
+                Box::pin(async move {
+                    spawn_text_focus_poller(input_dc_out, text_focus_state);
+                })
+            })
+        });
         input_dc.on_message(Box::new(move |msg: DataChannelMessage| {
             let input_for_dc = Arc::clone(&input_for_dc);
+            let input_dc_out = Arc::clone(&input_dc_out);
+            let focus_state_for_msg = Arc::clone(&focus_state_for_msg);
             Box::pin(async move {
                 let text = String::from_utf8_lossy(&msg.data);
                 match InputEvent::from_json(&text) {
                     Ok(evt) => {
-                        let mut guard = input_for_dc.lock().await;
-                        if let Some(inj) = guard.as_mut() {
-                            inj.handle(evt);
-                        } else {
-                            warn!("input event before injector ready: {text}");
+                        let check_focus = matches!(
+                            evt,
+                            InputEvent::Pointer {
+                                action: 1 | 2,
+                                ..
+                            }
+                        );
+                        {
+                            let mut guard = input_for_dc.lock().await;
+                            if let Some(inj) = guard.as_mut() {
+                                inj.handle(evt);
+                            } else {
+                                warn!("input event before injector ready: {text}");
+                            }
+                        }
+                        if check_focus {
+                            probe_and_send_text_focus(
+                                Arc::clone(&input_dc_out),
+                                Arc::clone(&focus_state_for_msg),
+                            )
+                            .await;
                         }
                     }
                     Err(e) => warn!("bad input event ({e}): {text}"),
@@ -409,6 +439,52 @@ async fn run_capture_loop(
         }
     }
     Ok(())
+}
+
+async fn send_host_event(dc: &RTCDataChannel, evt: HostEvent) {
+    if dc.ready_state() != RTCDataChannelState::Open {
+        return;
+    }
+    match evt.to_json() {
+        Ok(json) => {
+            if let Err(e) = dc.send_text(json).await {
+                warn!("host event send failed: {e}");
+            }
+        }
+        Err(e) => warn!("host event encode failed: {e}"),
+    }
+}
+
+async fn probe_and_send_text_focus(dc: Arc<RTCDataChannel>, state: Arc<AtomicBool>) {
+    // Focus/caret often appears a beat after the injected click.
+    tokio::time::sleep(Duration::from_millis(45)).await;
+    let focused = text_focus::is_text_input_focused();
+    state.store(focused, Ordering::SeqCst);
+    // Always notify after a tap so the phone can raise/dismiss soft keyboard.
+    send_host_event(&dc, HostEvent::TextFocus { focused }).await;
+
+    tokio::time::sleep(Duration::from_millis(120)).await;
+    let focused2 = text_focus::is_text_input_focused();
+    if focused2 != focused {
+        state.store(focused2, Ordering::SeqCst);
+        send_host_event(&dc, HostEvent::TextFocus { focused: focused2 }).await;
+    }
+}
+
+fn spawn_text_focus_poller(dc: Arc<RTCDataChannel>, state: Arc<AtomicBool>) {
+    tokio::spawn(async move {
+        loop {
+            tokio::time::sleep(Duration::from_millis(450)).await;
+            if dc.ready_state() != RTCDataChannelState::Open {
+                break;
+            }
+            let focused = text_focus::is_text_input_focused();
+            let prev = state.swap(focused, Ordering::SeqCst);
+            if prev != focused {
+                send_host_event(&dc, HostEvent::TextFocus { focused }).await;
+            }
+        }
+    });
 }
 
 pub async fn run_session(

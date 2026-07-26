@@ -122,6 +122,10 @@ export default function App() {
   const viewportRef = useRef<HTMLDivElement>(null);
   const stageRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<RohomieoViewer | null>(null);
+  const oskRef = useRef<HTMLInputElement>(null);
+  const textFocusRef = useRef(false);
+  const softKeyTimerRef = useRef<number | null>(null);
+  const fingerStartRef = useRef<{ x: number; y: number } | null>(null);
 
   const zoomRef = useRef(zoom);
   const panRef = useRef(pan);
@@ -135,6 +139,49 @@ export default function App() {
     startMid: { x: number; y: number };
   } | null>(null);
   const oneFingerRef = useRef(false);
+
+  const openSoftKeyboard = useCallback(() => {
+    setKeyboardOpen(true);
+    const el = oskRef.current;
+    if (el) {
+      el.focus({ preventScroll: true });
+    }
+  }, []);
+
+  const closeSoftKeyboard = useCallback(() => {
+    textFocusRef.current = false;
+    setKeyboardOpen(false);
+    setTyped("");
+    oskRef.current?.blur();
+  }, []);
+
+  /** Focus during the touch gesture so iOS/Android will actually raise the keyboard. */
+  const armSoftKeyboardForTap = useCallback(() => {
+    // Focus the (nearly invisible) capture input in this user-gesture turn.
+    // Don't show the OSK chrome until the host confirms a text field.
+    oskRef.current?.focus({ preventScroll: true });
+    if (softKeyTimerRef.current) window.clearTimeout(softKeyTimerRef.current);
+    softKeyTimerRef.current = window.setTimeout(() => {
+      softKeyTimerRef.current = null;
+      if (!textFocusRef.current) {
+        oskRef.current?.blur();
+        setKeyboardOpen(false);
+      }
+    }, 650);
+  }, []);
+
+  const applyHostTextFocus = useCallback(
+    (focused: boolean) => {
+      textFocusRef.current = focused;
+      if (softKeyTimerRef.current) {
+        window.clearTimeout(softKeyTimerRef.current);
+        softKeyTimerRef.current = null;
+      }
+      if (focused) openSoftKeyboard();
+      else closeSoftKeyboard();
+    },
+    [openSoftKeyboard, closeSoftKeyboard]
+  );
 
   useEffect(() => {
     const v = viewerRef.current;
@@ -189,6 +236,8 @@ export default function App() {
     }
     setZoom(1);
     setPan({ x: 0, y: 0 });
+    setKeyboardOpen(false);
+    textFocusRef.current = false;
     const viewer = new RohomieoViewer({
       onState: (s, d) => {
         setState(s);
@@ -222,10 +271,11 @@ export default function App() {
         }
         if (videoRef.current) videoRef.current.style.display = "none";
       },
+      onTextFocus: applyHostTextFocus,
     });
     viewerRef.current = viewer;
     viewer.connect(signalingUrl, sessionId.trim(), pin.trim());
-  }, [signalingUrl, sessionId, pin, remember]);
+  }, [signalingUrl, sessionId, pin, remember, applyHostTextFocus]);
 
   useEffect(() => {
     if (!invite.auto) return;
@@ -300,6 +350,7 @@ export default function App() {
     e.preventDefault();
     if (e.touches.length >= 2) {
       oneFingerRef.current = false;
+      fingerStartRef.current = null;
       const a = e.touches[0];
       const b = e.touches[1];
       pinchRef.current = {
@@ -316,7 +367,10 @@ export default function App() {
     pinchRef.current = null;
     oneFingerRef.current = true;
     const t = e.changedTouches[0];
-    if (t) sendPointer(1, t.clientX, t.clientY);
+    if (t) {
+      fingerStartRef.current = { x: t.clientX, y: t.clientY };
+      sendPointer(1, t.clientX, t.clientY);
+    }
   };
 
   const onTouchMove = (e: React.TouchEvent) => {
@@ -368,8 +422,17 @@ export default function App() {
     if (e.touches.length < 2) pinchRef.current = null;
     if (e.touches.length === 0 && oneFingerRef.current) {
       const t = e.changedTouches[0];
-      if (t) sendPointer(2, t.clientX, t.clientY);
+      if (t) {
+        sendPointer(2, t.clientX, t.clientY);
+        const start = fingerStartRef.current;
+        const moved = start
+          ? Math.hypot(t.clientX - start.x, t.clientY - start.y)
+          : 0;
+        // Short tap → arm soft keyboard now (user-gesture). Host confirms text field.
+        if (moved < 18) armSoftKeyboardForTap();
+      }
       oneFingerRef.current = false;
+      fingerStartRef.current = null;
     }
   };
 
@@ -531,7 +594,16 @@ export default function App() {
             <button type="button" onClick={zoomIn} aria-label="Zoom in">
               +
             </button>
-            <button type="button" onClick={() => setKeyboardOpen(!keyboardOpen)}>
+            <button
+              type="button"
+              onClick={() => {
+                if (keyboardOpen) closeSoftKeyboard();
+                else {
+                  textFocusRef.current = true;
+                  openSoftKeyboard();
+                }
+              }}
+            >
               Keyboard
             </button>
             <button type="button" onClick={toggleFullscreen}>
@@ -541,38 +613,47 @@ export default function App() {
               Disconnect
             </button>
           </div>
-          {keyboardOpen && (
-            <div className="osk">
-              <input
-                autoFocus
-                enterKeyHint="send"
-                value={typed}
-                onChange={(e) => {
-                  const next = e.target.value;
-                  const prev = typed;
-                  if (next.length > prev.length) {
-                    const added = next.slice(prev.length);
-                    for (const ch of added) {
-                      viewerRef.current?.sendKey(ch, true);
-                      viewerRef.current?.sendKey(ch, false);
-                    }
-                  } else if (next.length < prev.length) {
-                    for (let i = 0; i < prev.length - next.length; i++) {
-                      viewerRef.current?.sendKey("Backspace", true);
-                      viewerRef.current?.sendKey("Backspace", false);
-                    }
+          <div className={`osk${keyboardOpen ? " is-open" : " is-armed"}`}>
+            <input
+              ref={oskRef}
+              enterKeyHint="done"
+              autoComplete="off"
+              autoCorrect="off"
+              autoCapitalize="off"
+              spellCheck={false}
+              inputMode="text"
+              value={typed}
+              aria-label="Remote keyboard"
+              onChange={(e) => {
+                const next = e.target.value;
+                const prev = typed;
+                if (next.length > prev.length) {
+                  const added = next.slice(prev.length);
+                  for (const ch of added) {
+                    viewerRef.current?.sendKey(ch, true);
+                    viewerRef.current?.sendKey(ch, false);
                   }
-                  setTyped(next);
-                }}
-                onKeyDown={(e) => {
-                  if (e.key === "Enter") {
-                    viewerRef.current?.sendKey("Enter", true);
-                    viewerRef.current?.sendKey("Enter", false);
-                    setTyped("");
-                    e.preventDefault();
+                } else if (next.length < prev.length) {
+                  for (let i = 0; i < prev.length - next.length; i++) {
+                    viewerRef.current?.sendKey("Backspace", true);
+                    viewerRef.current?.sendKey("Backspace", false);
                   }
-                }}
-              />
+                }
+                setTyped(next);
+              }}
+              onKeyDown={(e) => {
+                if (e.key === "Enter") {
+                  viewerRef.current?.sendKey("Enter", true);
+                  viewerRef.current?.sendKey("Enter", false);
+                  setTyped("");
+                  e.preventDefault();
+                }
+              }}
+              onBlur={() => {
+                if (!textFocusRef.current) setKeyboardOpen(false);
+              }}
+            />
+            {keyboardOpen && (
               <button
                 type="button"
                 onClick={() => {
@@ -583,8 +664,8 @@ export default function App() {
               >
                 Send
               </button>
-            </div>
-          )}
+            )}
+          </div>
         </section>
       )}
     </div>

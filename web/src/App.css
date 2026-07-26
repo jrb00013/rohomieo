@@ -174,12 +174,27 @@ label.checkbox input {
 
 .osk {
   position: absolute;
-  bottom: 3.5rem;
   left: 0.75rem;
   right: 0.75rem;
   display: flex;
   gap: 0.5rem;
   z-index: 4;
+}
+
+.osk.is-armed {
+  bottom: 0;
+  height: 1px;
+  opacity: 0.02;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.osk.is-open {
+  bottom: 3.5rem;
+  height: auto;
+  opacity: 1;
+  overflow: visible;
+  pointer-events: auto;
 }
 
 .osk input {
