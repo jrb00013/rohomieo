@@ -108,7 +108,7 @@ pub struct H264Encoder {
 impl H264Encoder {
     pub fn new(width: u32, height: u32) -> Result<Self> {
         let config = EncoderConfig::new()
-            .set_bitrate_bps(2_500_000)
+            .set_bitrate_bps(8_000_000)
             .max_frame_rate(30.0)
             .usage_type(UsageType::ScreenContentRealTime)
             .rate_control_mode(RateControlMode::Bitrate);

@@ -108,8 +108,8 @@ impl WebRtcHost {
         );
         setting.set_interface_filter(Box::new(|name| ice_iface_ok(name)));
         setting.set_ip_filter(Box::new(|ip| ice_ip_ok(ip)));
-        // Phone JPEG frames are often >64KiB; default SCTP cap silently drops them → black screen.
-        setting.set_sctp_max_message_size_can_send(SctpMaxMessageSize::Bounded(256 * 1024));
+        // High-res JPEG for phones can be ~150–220KiB; keep headroom under the SCTP cap.
+        setting.set_sctp_max_message_size_can_send(SctpMaxMessageSize::Bounded(512 * 1024));
         if let Some(lan) = invite::guess_lan_ip() {
             info!("ICE host candidate pinned to LAN {lan}");
             setting.set_nat_1to1_ips(vec![lan.to_string()], RTCIceCandidateType::Host);
@@ -354,7 +354,8 @@ async fn run_capture_loop(
     let mut motion = MotionDetector::new(w, h, stride);
     let mut encoder = H264Encoder::new(w as u32, h as u32)?;
     let frame_duration = Duration::from_millis(1000 / target_fps.max(1) as u64);
-    let jpeg_interval = Duration::from_millis(100); // 10 fps fallback
+    // ~12 fps JPEG — LAN can carry high-q frames; phones rely on this path.
+    let jpeg_interval = Duration::from_millis(83);
     let mut ticker = tokio::time::interval(frame_duration);
     ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Skip);
     let mut last_jpeg = tokio::time::Instant::now() - jpeg_interval;

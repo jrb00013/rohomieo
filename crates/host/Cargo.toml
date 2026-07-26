@@ -29,7 +29,8 @@ rustls = { version = "0.23", default-features = false, features = ["ring", "std"
 url = "2"
 bytes = "1"
 openh264 = "0.6"
-image = { version = "0.25", default-features = false, features = ["jpeg"] }
+image = { version = "0.25", default-features = false }
+jpeg-encoder = "0.6"
 toml = "1.1"
 qrcode = { version = "0.14", default-features = false }
 

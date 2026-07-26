@@ -143,6 +143,9 @@ label.checkbox input {
   height: 100%;
   object-fit: fill;
   pointer-events: none;
+  /* Prefer high-quality resampling when the user zooms the stream. */
+  image-rendering: auto;
+  image-rendering: high-quality;
 }
 
 .touch-surface {
