@@ -68,10 +68,22 @@ export default function App() {
   const saved = loadSession();
   // QR / deep-link joins must use THIS page's host for signaling — never a
   // remembered wss://127.0.0.1 from a previous laptop browser session.
-  const [signalingUrl, setSignalingUrl] = useState(
+  const initialWs =
     invite.signalingUrl ??
-      (invite.sessionId || invite.auto ? DEFAULT_WS : saved.signalingUrl ?? DEFAULT_WS)
-  );
+    (invite.sessionId || invite.auto
+      ? DEFAULT_WS
+      : saved.signalingUrl ?? DEFAULT_WS);
+  const [signalingUrl, setSignalingUrl] = useState(() => {
+    // Phone opened LAN URL but still had localhost saved — force page host.
+    if (
+      typeof location !== "undefined" &&
+      !/^(127\.0\.0\.1|localhost)$/i.test(location.hostname) &&
+      /wss?:\/\/(127\.0\.0\.1|localhost)\b/i.test(initialWs)
+    ) {
+      return DEFAULT_WS;
+    }
+    return initialWs;
+  });
   const [sessionId, setSessionId] = useState(
     invite.sessionId ?? saved.sessionId ?? ""
   );

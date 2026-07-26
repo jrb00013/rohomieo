@@ -13,8 +13,10 @@ pub fn join_url(signaling_ws: &str, session_id: &str, pin: &str, public_base: Op
         .map(|s| s.trim_end_matches('/').to_string())
         .unwrap_or_else(|| https_base_from_signaling(signaling_ws));
 
+    // Use ?query (not #hash). Phone camera / QR apps often drop the fragment,
+    // which left the PWA with an empty session and looked "broken" after scan.
     format!(
-        "{base}/#s={}&p={}&auto=1",
+        "{base}/?s={}&p={}&auto=1",
         urlencoding_lite(session_id),
         urlencoding_lite(pin)
     )
@@ -105,7 +107,7 @@ mod tests {
         );
         assert_eq!(
             u,
-            "https://192.168.1.10:8443/#s=abc-def&p=123456&auto=1"
+            "https://192.168.1.10:8443/?s=abc-def&p=123456&auto=1"
         );
     }
 }

@@ -1,12 +1,14 @@
 use crate::capture::ScreenCapture;
 use crate::encode::H264Encoder;
 use crate::input::InputInjector;
+use crate::invite;
 use crate::jpeg_frame;
 use crate::motion::MotionDetector;
 use crate::signaling_client::{SignalingClient, SignalingEvent};
 use anyhow::Result;
 use bytes::Bytes;
 use rohomieo_proto::{InputEvent, SignalMessage};
+use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
@@ -14,11 +16,13 @@ use tokio::sync::Mutex;
 use tracing::{info, warn};
 use webrtc::api::interceptor_registry::register_default_interceptors;
 use webrtc::api::media_engine::{MediaEngine, MIME_TYPE_H264};
+use webrtc::api::setting_engine::SettingEngine;
 use webrtc::api::APIBuilder;
 use webrtc::data_channel::data_channel_message::DataChannelMessage;
 use webrtc::data_channel::data_channel_state::RTCDataChannelState;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
+use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
 use webrtc::interceptor::registry::Registry;
 use webrtc::media::Sample;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -28,6 +32,8 @@ use webrtc::peer_connection::RTCPeerConnection;
 use webrtc::rtp_transceiver::rtp_codec::RTCRtpCodecCapability;
 use webrtc::track::track_local::track_local_static_sample::TrackLocalStaticSample;
 use webrtc::track::track_local::TrackLocal;
+use webrtc::ice::mdns::MulticastDnsMode;
+use webrtc::ice::network_type::NetworkType;
 
 pub struct WebRtcHost {
     pc: Arc<RTCPeerConnection>,
@@ -35,6 +41,48 @@ pub struct WebRtcHost {
     signaling: Arc<SignalingClient>,
     stream_video: Arc<AtomicBool>,
     video_dc: Arc<Mutex<Option<Arc<RTCDataChannel>>>>,
+}
+
+fn ice_iface_ok(name: &str) -> bool {
+    let n = name.to_ascii_lowercase();
+    !(n.contains("wsl")
+        || n.contains("vethernet")
+        || n.contains("hyper-v")
+        || n.contains("docker")
+        || n.contains("loopback")
+        || n.contains("bluetooth")
+        || n.contains("virtualbox")
+        || n.contains("vmware")
+        || n.starts_with("br-")
+        || n.starts_with("veth")
+        || n.starts_with("cali"))
+}
+
+fn ice_ip_ok(ip: IpAddr) -> bool {
+    match ip {
+        IpAddr::V4(v4) => {
+            !v4.is_loopback()
+                && !v4.is_link_local()
+                && !v4.is_unspecified()
+                && !v4.is_multicast()
+                && !v4.is_broadcast()
+        }
+        // Phone ↔ Windows LAN path is IPv4; skip broken IPv6/APIPA-style noise on WSL hosts.
+        IpAddr::V6(_) => false,
+    }
+}
+
+fn ice_candidate_line_ok(candidate: &str) -> bool {
+    // a=candidate:… foundation component protocol priority ip port typ …
+    let parts: Vec<&str> = candidate.split_whitespace().collect();
+    let ip = parts.get(4).copied().unwrap_or("");
+    if ip.ends_with(".local") {
+        return false;
+    }
+    match ip.parse::<IpAddr>() {
+        Ok(addr) => ice_ip_ok(addr),
+        Err(_) => false,
+    }
 }
 
 impl WebRtcHost {
@@ -45,7 +93,23 @@ impl WebRtcHost {
         let mut registry = Registry::new();
         registry = register_default_interceptors(registry, &mut m)?;
 
+        let mut setting = SettingEngine::default();
+        setting.set_network_types(vec![NetworkType::Udp4]);
+        setting.set_ice_multicast_dns_mode(MulticastDnsMode::Disabled);
+        setting.set_ice_timeouts(
+            Some(Duration::from_secs(30)),
+            Some(Duration::from_secs(60)),
+            Some(Duration::from_secs(2)),
+        );
+        setting.set_interface_filter(Box::new(|name| ice_iface_ok(name)));
+        setting.set_ip_filter(Box::new(|ip| ice_ip_ok(ip)));
+        if let Some(lan) = invite::guess_lan_ip() {
+            info!("ICE host candidate pinned to LAN {lan}");
+            setting.set_nat_1to1_ips(vec![lan.to_string()], RTCIceCandidateType::Host);
+        }
+
         let api = APIBuilder::new()
+            .with_setting_engine(setting)
             .with_media_engine(m)
             .with_interceptor_registry(registry)
             .build();
@@ -85,6 +149,9 @@ impl WebRtcHost {
             Box::pin(async move {
                 if let Some(c) = c {
                     if let Ok(init) = c.to_json() {
+                        if !ice_candidate_line_ok(&init.candidate) {
+                            return;
+                        }
                         signaling.send(SignalMessage::IceCandidate {
                             candidate: init.candidate,
                             sdp_mid: init.sdp_mid,
@@ -314,30 +381,46 @@ pub async fn run_session(
     target_fps: u32,
     idle_fps: u32,
 ) -> Result<()> {
-    let host = WebRtcHost::new(Arc::clone(&signaling)).await?;
+    // Fresh PeerConnection per viewer — reusing a Failed PC after phone
+    // disconnect makes the next scan look "dead" even with a live QR.
+    let mut host: Option<WebRtcHost> = None;
     let input_slot: Arc<Mutex<Option<InputInjector>>> = Arc::new(Mutex::new(None));
-    host.spawn_capture_loop(target_fps, idle_fps, Arc::clone(&input_slot));
 
     while let Some(evt) = signaling.recv().await {
         match evt {
             SignalingEvent::PeerJoined => {
-                info!("viewer joined — sending offer");
-                host.create_and_send_offer().await?;
+                if let Some(old) = host.take() {
+                    old.stream_video.store(false, Ordering::SeqCst);
+                    let _ = old.pc.close().await;
+                }
+                info!("viewer joined — new peer connection + offer");
+                let h = WebRtcHost::new(Arc::clone(&signaling)).await?;
+                h.spawn_capture_loop(target_fps, idle_fps, Arc::clone(&input_slot));
+                h.create_and_send_offer().await?;
+                host = Some(h);
             }
             SignalingEvent::Answer(sdp) => {
-                host.handle_answer(sdp).await?;
+                if let Some(h) = host.as_ref() {
+                    h.handle_answer(sdp).await?;
+                } else {
+                    warn!("answer with no active peer connection");
+                }
             }
             SignalingEvent::IceCandidate {
                 candidate,
                 sdp_mid,
                 sdp_mline_index,
             } => {
-                host.add_ice_candidate(candidate, sdp_mid, sdp_mline_index)
-                    .await?;
+                if let Some(h) = host.as_ref() {
+                    h.add_ice_candidate(candidate, sdp_mid, sdp_mline_index)
+                        .await?;
+                }
             }
             SignalingEvent::PeerLeft => {
                 info!("viewer disconnected");
-                host.stream_video.store(false, Ordering::SeqCst);
+                if let Some(h) = host.as_ref() {
+                    h.stream_video.store(false, Ordering::SeqCst);
+                }
             }
             SignalingEvent::Error(m) => {
                 warn!("signaling error: {m}");
