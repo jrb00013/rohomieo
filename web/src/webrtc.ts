@@ -172,14 +172,22 @@ export class RohomieoViewer {
       if (ch.label === "frames") {
         ch.binaryType = "arraybuffer";
         ch.onmessage = (e) => {
-          const data = e.data;
-          if (!(data instanceof ArrayBuffer)) return;
-          const blob = new Blob([data], { type: "image/jpeg" });
-          const url = URL.createObjectURL(blob);
-          if (this.frameUrl) URL.revokeObjectURL(this.frameUrl);
-          this.frameUrl = url;
-          this.cb.onFrame?.(url);
-          this.cb.onState("connected");
+          void (async () => {
+            let data: ArrayBuffer | null = null;
+            if (e.data instanceof ArrayBuffer) data = e.data;
+            else if (e.data instanceof Blob) data = await e.data.arrayBuffer();
+            else if (ArrayBuffer.isView(e.data)) {
+              const v = e.data as ArrayBufferView;
+              data = v.buffer.slice(v.byteOffset, v.byteOffset + v.byteLength) as ArrayBuffer;
+            }
+            if (!data || data.byteLength < 100) return;
+            const blob = new Blob([data], { type: "image/jpeg" });
+            const url = URL.createObjectURL(blob);
+            if (this.frameUrl) URL.revokeObjectURL(this.frameUrl);
+            this.frameUrl = url;
+            this.cb.onFrame?.(url);
+            this.cb.onState("connected");
+          })();
         };
         return;
       }

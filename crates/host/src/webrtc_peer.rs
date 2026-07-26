@@ -365,17 +365,25 @@ async fn run_capture_loop(
 
         if last_jpeg.elapsed() >= jpeg_interval {
             last_jpeg = tokio::time::Instant::now();
-            if let Ok(jpeg) = jpeg_frame::bgra_to_jpeg(&bgra, w, h, stride) {
-                let dc = video_dc.lock().await.clone();
-                if let Some(dc) = dc {
-                    if dc.ready_state() == RTCDataChannelState::Open {
-                        let n = jpeg.len();
-                        match dc.send(&Bytes::from(jpeg)).await {
-                            Ok(_) => jpeg_frames += 1,
-                            Err(e) => warn!("JPEG frame send failed ({n} bytes): {e}"),
+            match jpeg_frame::bgra_to_jpeg(&bgra, w, h, stride) {
+                Ok(jpeg) => {
+                    let dc = video_dc.lock().await.clone();
+                    if let Some(dc) = dc {
+                        if dc.ready_state() == RTCDataChannelState::Open {
+                            let n = jpeg.len();
+                            match dc.send(&Bytes::from(jpeg)).await {
+                                Ok(_) => {
+                                    jpeg_frames += 1;
+                                    if jpeg_frames == 1 {
+                                        info!("first JPEG frame sent ({n} bytes)");
+                                    }
+                                }
+                                Err(e) => warn!("JPEG frame send failed ({n} bytes): {e}"),
+                            }
                         }
                     }
                 }
+                Err(e) => warn!("JPEG encode failed: {e:#}"),
             }
         }
 
