@@ -102,6 +102,7 @@ export default function App() {
   const frameRef = useRef<HTMLImageElement>(null);
   const surfaceRef = useRef<HTMLDivElement>(null);
   const viewerRef = useRef<RohomieoViewer | null>(null);
+  const mediaAspectRef = useRef<number>(16 / 10);
 
   useEffect(() => {
     const v = viewerRef.current;
@@ -144,6 +145,11 @@ export default function App() {
       onFrame: (url) => {
         const img = frameRef.current;
         if (img) {
+          img.onload = () => {
+            if (img.naturalWidth > 0 && img.naturalHeight > 0) {
+              mediaAspectRef.current = img.naturalWidth / img.naturalHeight;
+            }
+          };
           img.src = url;
           img.style.display = "block";
         }
@@ -183,7 +189,12 @@ export default function App() {
   const sendPointer = (action: number, clientX: number, clientY: number) => {
     const el = surfaceRef.current;
     if (!el || !viewerRef.current) return;
-    const { x, y } = normalizedPointer(el, clientX, clientY);
+    const { x, y } = normalizedPointer(
+      el,
+      clientX,
+      clientY,
+      mediaAspectRef.current
+    );
     viewerRef.current.sendInput({ type: "pointer", x, y, action });
   };
 
@@ -216,20 +227,36 @@ export default function App() {
     viewerRef.current?.sendWheel(e.deltaX, e.deltaY);
   };
 
-  const flushKey = (text: string) => {
-    for (const ch of text) {
-      viewerRef.current?.sendKey(ch, true);
-      viewerRef.current?.sendKey(ch, false);
-    }
-    setTyped("");
-  };
-
   const connected = state === "connected";
   const busy =
     state === "connecting" ||
     state === "registering" ||
     state === "waiting_host" ||
     state === "negotiating";
+
+  useEffect(() => {
+    if (!connected) return;
+    const shouldIgnore = (e: KeyboardEvent) => {
+      const t = e.target;
+      return t instanceof HTMLInputElement || t instanceof HTMLTextAreaElement;
+    };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (shouldIgnore(e)) return;
+      e.preventDefault();
+      viewerRef.current?.sendKey(e.key, true);
+    };
+    const onKeyUp = (e: KeyboardEvent) => {
+      if (shouldIgnore(e)) return;
+      e.preventDefault();
+      viewerRef.current?.sendKey(e.key, false);
+    };
+    window.addEventListener("keydown", onKeyDown, true);
+    window.addEventListener("keyup", onKeyUp, true);
+    return () => {
+      window.removeEventListener("keydown", onKeyDown, true);
+      window.removeEventListener("keyup", onKeyUp, true);
+    };
+  }, [connected]);
 
   return (
     <div className="app">
@@ -329,15 +356,40 @@ export default function App() {
                 autoFocus
                 enterKeyHint="send"
                 value={typed}
-                onChange={(e) => setTyped(e.target.value)}
+                onChange={(e) => {
+                  const next = e.target.value;
+                  const prev = typed;
+                  if (next.length > prev.length) {
+                    const added = next.slice(prev.length);
+                    for (const ch of added) {
+                      viewerRef.current?.sendKey(ch, true);
+                      viewerRef.current?.sendKey(ch, false);
+                    }
+                  } else if (next.length < prev.length) {
+                    for (let i = 0; i < prev.length - next.length; i++) {
+                      viewerRef.current?.sendKey("Backspace", true);
+                      viewerRef.current?.sendKey("Backspace", false);
+                    }
+                  }
+                  setTyped(next);
+                }}
                 onKeyDown={(e) => {
                   if (e.key === "Enter") {
-                    flushKey(typed);
+                    viewerRef.current?.sendKey("Enter", true);
+                    viewerRef.current?.sendKey("Enter", false);
+                    setTyped("");
                     e.preventDefault();
                   }
                 }}
               />
-              <button type="button" onClick={() => flushKey(typed)}>
+              <button
+                type="button"
+                onClick={() => {
+                  viewerRef.current?.sendKey("Enter", true);
+                  viewerRef.current?.sendKey("Enter", false);
+                  setTyped("");
+                }}
+              >
                 Send
               </button>
             </div>

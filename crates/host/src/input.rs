@@ -74,11 +74,20 @@ fn map_key(key: &str) -> Option<Key> {
         "Backspace" => Some(Key::Backspace),
         "Tab" => Some(Key::Tab),
         "Escape" => Some(Key::Escape),
+        "Delete" | "Del" => Some(Key::Delete),
         "ArrowUp" => Some(Key::UpArrow),
         "ArrowDown" => Some(Key::DownArrow),
         "ArrowLeft" => Some(Key::LeftArrow),
         "ArrowRight" => Some(Key::RightArrow),
+        "Home" => Some(Key::Home),
+        "End" => Some(Key::End),
+        "PageUp" => Some(Key::PageUp),
+        "PageDown" => Some(Key::PageDown),
         " " => Some(Key::Space),
+        "Shift" | "ShiftLeft" | "ShiftRight" => Some(Key::Shift),
+        "Control" | "ControlLeft" | "ControlRight" => Some(Key::Control),
+        "Alt" | "AltLeft" | "AltRight" => Some(Key::Alt),
+        "Meta" | "MetaLeft" | "MetaRight" | "OS" => Some(Key::Meta),
         s if s.len() == 1 => {
             let c = s.chars().next()?;
             Some(Key::Unicode(c))

@@ -87,7 +87,10 @@ fn ice_candidate_line_ok(candidate: &str) -> bool {
 }
 
 impl WebRtcHost {
-    pub async fn new(signaling: Arc<SignalingClient>) -> Result<Self> {
+    pub async fn new(
+        signaling: Arc<SignalingClient>,
+        input_slot: Arc<Mutex<Option<InputInjector>>>,
+    ) -> Result<Self> {
         let mut m = MediaEngine::default();
         m.register_default_codecs()?;
 
@@ -170,8 +173,6 @@ impl WebRtcHost {
             Box::pin(async {})
         }));
 
-        let input_slot: Arc<Mutex<Option<InputInjector>>> = Arc::new(Mutex::new(None));
-
         let input_dc = pc
             .create_data_channel(
                 "input",
@@ -184,14 +185,27 @@ impl WebRtcHost {
             )
             .await?;
 
+        // MUST use the same slot the capture loop fills — a local empty Mutex
+        // made every touch/key parse OK then get dropped (injector always None).
         let input_for_dc = Arc::clone(&input_slot);
+        input_dc.on_open(Box::new(|| {
+            info!("input datachannel open (touch/keyboard)");
+            Box::pin(async {})
+        }));
         input_dc.on_message(Box::new(move |msg: DataChannelMessage| {
             let input_for_dc = Arc::clone(&input_for_dc);
             Box::pin(async move {
-                if let Ok(evt) = InputEvent::from_json(&String::from_utf8_lossy(&msg.data)) {
-                    if let Some(inj) = input_for_dc.lock().await.as_mut() {
-                        inj.handle(evt);
+                let text = String::from_utf8_lossy(&msg.data);
+                match InputEvent::from_json(&text) {
+                    Ok(evt) => {
+                        let mut guard = input_for_dc.lock().await;
+                        if let Some(inj) = guard.as_mut() {
+                            inj.handle(evt);
+                        } else {
+                            warn!("input event before injector ready: {text}");
+                        }
                     }
+                    Err(e) => warn!("bad input event ({e}): {text}"),
                 }
             })
         }));
@@ -416,7 +430,7 @@ pub async fn run_session(
                     let _ = old.pc.close().await;
                 }
                 info!("viewer joined — new peer connection + offer");
-                let h = WebRtcHost::new(Arc::clone(&signaling)).await?;
+                let h = WebRtcHost::new(Arc::clone(&signaling), Arc::clone(&input_slot)).await?;
                 h.spawn_capture_loop(target_fps, idle_fps, Arc::clone(&input_slot));
                 h.create_and_send_offer().await?;
                 host = Some(h);

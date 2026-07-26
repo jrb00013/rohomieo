@@ -256,6 +256,14 @@ export class RohomieoViewer {
   sendInput(evt: InputEvent) {
     if (this.dc?.readyState === "open") {
       this.dc.send(JSON.stringify(evt));
+      return;
+    }
+    // Channel can lag a beat behind "connected" from JPEG/video.
+    if (this.dc && this.dc.readyState === "connecting") {
+      const ch = this.dc;
+      const payload = JSON.stringify(evt);
+      const sendOnce = () => ch.send(payload);
+      ch.addEventListener("open", sendOnce, { once: true });
     }
   }
 
@@ -271,11 +279,32 @@ export class RohomieoViewer {
 export function normalizedPointer(
   el: HTMLElement,
   clientX: number,
-  clientY: number
+  clientY: number,
+  mediaAspect?: number
 ): { x: number; y: number } {
   const r = el.getBoundingClientRect();
+  const clamp = (v: number) => Math.min(1, Math.max(0, v));
+  if (!mediaAspect || !(mediaAspect > 0) || r.width <= 0 || r.height <= 0) {
+    return {
+      x: clamp((clientX - r.left) / r.width),
+      y: clamp((clientY - r.top) / r.height),
+    };
+  }
+  // Match CSS object-fit: contain letterboxing so taps land on the real desktop.
+  const viewAspect = r.width / r.height;
+  let contentW = r.width;
+  let contentH = r.height;
+  let offX = 0;
+  let offY = 0;
+  if (viewAspect > mediaAspect) {
+    contentW = r.height * mediaAspect;
+    offX = (r.width - contentW) / 2;
+  } else {
+    contentH = r.width / mediaAspect;
+    offY = (r.height - contentH) / 2;
+  }
   return {
-    x: (clientX - r.left) / r.width,
-    y: (clientY - r.top) / r.height,
+    x: clamp((clientX - r.left - offX) / contentW),
+    y: clamp((clientY - r.top - offY) / contentH),
   };
 }
