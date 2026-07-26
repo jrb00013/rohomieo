@@ -6,7 +6,7 @@ Stream and control your computer from your phone over **WireGuard** + **WebRTC**
 
 | Platform | Command |
 |----------|---------|
-| **Install + start** | `./install.sh` (deps, build, Windows allow, start — UAC once) |
+| **Install + start** | `./install.sh` (deps, build, broker/UAC once, start) |
 | **Legacy setup** | `./setup.sh` / `./setup.sh --wsl` |
 | **Start session** | `./install.sh` again, or `./setup.sh --start` |
 | **Stop** | `./setup.sh --stop` |
@@ -15,7 +15,7 @@ Stream and control your computer from your phone over **WireGuard** + **WebRTC**
 ```bash
 git clone https://github.com/jrb00013/rohomieo.git ~/rohomieo
 cd ~/rohomieo
-./install.sh            # approve UAC once; later installs skip the prompt
+./install.sh            # approve UAC once to install RohomieoBroker; later installs are silent
 ```
 
 Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Windows builds the `.exe` host for your real desktop; WSL/Linux/macOS scripts build Unix binaries + signaling.
@@ -57,7 +57,7 @@ cd mobile && flutter create . --platforms=ios && flutter pub get && flutter run 
 
 ```text
 rohomieo/
-  install.sh                # one-shot: deps, build, Windows allow (UAC once), start
+  install.sh                # one-shot: deps, build, broker (UAC once), start
   setup.sh                  # dispatcher: --linux | --wsl | --macos | --windows
   Makefile                  # check, test, web-build
   docker-compose.yml        # signaling container
@@ -66,7 +66,9 @@ rohomieo/
   scripts/setup-wsl.sh
   scripts/setup-macos.sh
   scripts/setup-windows.ps1   # Windows host (built via WSL MinGW, no Visual Studio)
-  scripts/windows/install-allow.ps1  # elevated: firewall, Defender, sign, SAC, start
+  scripts/windows/install-broker.ps1  # UAC once: LocalSystem elevated broker service
+  scripts/windows/install-allow.ps1   # fallback elevated allow (firewall/SAC/sign)
+  native/rohomieo-broker/   # C++ LocalSystem broker + ctl (named pipe)
   scripts/start-{linux,wsl,macos}.sh
   crates/{proto,signaling,host}
   web/                  # PWA viewer

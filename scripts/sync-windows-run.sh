@@ -36,9 +36,12 @@ source "$ROOT/scripts/lib/bundle-windows-runtime.sh"
 
 rm -rf "$STAGE"
 mkdir -p "$STAGE/web/dist" "$STAGE/certs" "$RUN"
-for f in rohomieo-signaling.exe rohomieo-host.exe libunwind.dll libc++.dll libwinpthread-1.dll; do
+for f in rohomieo-signaling.exe rohomieo-host.exe rohomieo-broker.exe rohomieo-broker-ctl.exe \
+         libunwind.dll libc++.dll libwinpthread-1.dll; do
   [[ -f "$SRC/$f" ]] && cp -f "$SRC/$f" "$STAGE/"
 done
+# ctl is useful unprivileged even before promote
+[[ -f "$SRC/rohomieo-broker-ctl.exe" ]] && cp -f "$SRC/rohomieo-broker-ctl.exe" "$RUN/"
 cp -a "$ROOT/web/dist/." "$STAGE/web/dist/"
 cp -f "$ROOT/infra/certs/cert.pem" "$ROOT/infra/certs/key.pem" "$STAGE/certs/"
 

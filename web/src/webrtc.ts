@@ -16,6 +16,9 @@ export interface ViewerCallbacks {
   onFrame?: (url: string) => void;
 }
 
+const SESSION_NOT_FOUND_RETRIES = 8;
+const SESSION_NOT_FOUND_DELAY_MS = 750;
+
 export class RohomieoViewer {
   private ws: WebSocket | null = null;
   private pc: RTCPeerConnection | null = null;
@@ -23,20 +26,30 @@ export class RohomieoViewer {
   private frameUrl: string | null = null;
   private heartbeatTimer: number | null = null;
   private connectTimer: number | null = null;
+  private sessionRetryTimer: number | null = null;
+  private sessionRetries = 0;
+  private pendingRegister: { sid: string; pin: string } | null = null;
 
   constructor(private cb: ViewerCallbacks) {}
 
   connect(signalingUrl: string, sessionId: string, pin: string) {
     this.cleanup();
+    this.sessionRetries = 0;
     const url = signalingUrl.trim();
     const sid = sessionId.trim().replace(/\s+/g, "");
     const pinCode = pin.trim().replace(/\D/g, "").slice(0, 6);
+    this.pendingRegister = { sid, pin: pinCode };
 
     if (typeof window !== "undefined" && window.location.protocol === "https:" && url.startsWith("ws://")) {
       this.cb.onState(
         "error",
         "Use wss:// (not ws://) — this page is HTTPS"
       );
+      return;
+    }
+
+    if (!sid || pinCode.length < 4) {
+      this.cb.onState("error", "Session ID and PIN are required");
       return;
     }
 
@@ -58,7 +71,7 @@ export class RohomieoViewer {
       if (this.connectTimer) clearTimeout(this.connectTimer);
       this.connectTimer = null;
       this.cb.onState("registering", "Checking session and PIN…");
-      send(ws, { type: "register_viewer", session_id: sid, pin: pinCode });
+      this.sendViewerRegister(ws);
       this.startHeartbeat(ws);
     };
 
@@ -85,10 +98,20 @@ export class RohomieoViewer {
           "error",
           ev.reason || `Connection closed (code ${ev.code})`
         );
-      } else {
+      } else if (this.ws === ws) {
         this.cb.onState("disconnected");
       }
     };
+  }
+
+  private sendViewerRegister(ws: WebSocket) {
+    const pending = this.pendingRegister;
+    if (!pending || ws.readyState !== WebSocket.OPEN) return;
+    send(ws, {
+      type: "register_viewer",
+      session_id: pending.sid,
+      pin: pending.pin,
+    });
   }
 
   disconnect() {
@@ -101,7 +124,10 @@ export class RohomieoViewer {
     this.frameUrl = null;
     if (this.connectTimer) clearTimeout(this.connectTimer);
     this.connectTimer = null;
+    if (this.sessionRetryTimer) clearTimeout(this.sessionRetryTimer);
+    this.sessionRetryTimer = null;
     if (this.heartbeatTimer) clearInterval(this.heartbeatTimer);
+    this.heartbeatTimer = null;
     this.dc?.close();
     this.pc?.close();
     this.ws?.close();
@@ -169,11 +195,32 @@ export class RohomieoViewer {
   private async handleSignal(msg: SignalMessage) {
     switch (msg.type) {
       case "registered":
+        this.sessionRetries = 0;
         this.cb.onState("waiting_host");
         break;
-      case "error":
-        this.cb.onState("error", msg.message);
+      case "error": {
+        const text = msg.message || "";
+        const notReady =
+          /session not found|not connected to signaling/i.test(text);
+        if (
+          notReady &&
+          this.ws?.readyState === WebSocket.OPEN &&
+          this.sessionRetries < SESSION_NOT_FOUND_RETRIES
+        ) {
+          this.sessionRetries += 1;
+          this.cb.onState(
+            "registering",
+            `Waiting for host… (${this.sessionRetries}/${SESSION_NOT_FOUND_RETRIES})`
+          );
+          if (this.sessionRetryTimer) clearTimeout(this.sessionRetryTimer);
+          this.sessionRetryTimer = window.setTimeout(() => {
+            if (this.ws) this.sendViewerRegister(this.ws);
+          }, SESSION_NOT_FOUND_DELAY_MS);
+          break;
+        }
+        this.cb.onState("error", text);
         break;
+      }
       case "offer": {
         this.cb.onState("negotiating");
         const pc = await this.ensurePeer();

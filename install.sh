@@ -35,9 +35,10 @@ Rohomieo install (auto-detect)
   ./install.sh --build-only Deps + build only
   ./install.sh --start-only Start from existing build (auto Windows allow)
 
-Windows allow (firewall, Defender, sign, Smart App Control) runs automatically
-on WSL/Windows. Approve UAC the first time — a scheduled task is saved so later
-installs elevate with no prompt. To revoke: schtasks /Delete /TN RohomieoElevatedAllow /F
+Windows allow prefers the RohomieoBroker LocalSystem service (named pipe).
+First time: approve UAC to install the service. Later: no prompt.
+Fallback: install-allow.ps1 / scheduled task. Revoke broker:
+  powershell -File scripts/windows/install-broker.ps1 -Uninstall
 
 EOF
 }
@@ -185,10 +186,13 @@ start_wsl_windows_stack() {
   if [[ ! -f "$ROOT/target/release/rohomieo-host.exe" ]] || [[ ! -f "$ROOT/target/release/rohomieo-signaling.exe" ]]; then
     build_windows_from_wsl || return 1
   else
+    if [[ ! -f "$ROOT/target/release/rohomieo-broker.exe" ]]; then
+      "$ROOT/scripts/build-windows-broker.sh" || install_warn "Broker build skipped"
+    fi
     install_info "Staging Windows build (NTFS)..."
     WIN_USER="$WIN_USER" "$ROOT/scripts/sync-windows-run.sh" || return 1
   fi
-  install_info "Windows allow + start (UAC once, then silent)"
+  install_info "Windows allow + start (broker service preferred; UAC once to install)"
   invoke_windows_allow || {
     install_warn "Elevated allow failed — trying run-bridge.ps1"
     rohomieo_start_windows_bridge || true
@@ -217,17 +221,159 @@ stop_port_8443_conflicts() {
   fi
 }
 
+# Resolve Windows path to rohomieo-broker-ctl.exe (Program Files or run dir)
+broker_ctl_win_path() {
+  local win_user run_linux
+  win_user="$(detect_win_user)"
+  run_linux="/mnt/c/Users/${win_user}/AppData/Local/rohomieo-run"
+  if [[ -f "/mnt/c/Program Files/Rohomieo/rohomieo-broker-ctl.exe" ]]; then
+    echo "/mnt/c/Program Files/Rohomieo/rohomieo-broker-ctl.exe"
+    return 0
+  fi
+  if [[ -f "$run_linux/rohomieo-broker-ctl.exe" ]]; then
+    echo "$run_linux/rohomieo-broker-ctl.exe"
+    return 0
+  fi
+  return 1
+}
+
+broker_ping() {
+  local ctl
+  ctl=$(broker_ctl_win_path) || return 1
+  "$ctl" PING 2>/dev/null | tr -d '\r' | grep -q '^OK'
+}
+
+# Prefer LocalSystem broker service (no UAC after one-time install-broker.ps1)
+invoke_windows_allow_via_broker() {
+  local win_user run_linux run_dir ctl host_w sig_w web_w cert_w key_w
+  win_user="$(detect_win_user)"
+  run_linux="/mnt/c/Users/${win_user}/AppData/Local/rohomieo-run"
+  run_dir=$(wslpath -w "$run_linux" 2>/dev/null || echo "C:\\Users\\${win_user}\\AppData\\Local\\rohomieo-run")
+  ctl=$(broker_ctl_win_path) || return 1
+  broker_ping || return 1
+
+  install_info "Windows allow via RohomieoBroker service (no UAC)"
+
+  # Promote staging if present (unprivileged copy is fine when exes aren't locked)
+  if [[ -f "$run_linux/staging/rohomieo-signaling.exe" ]]; then
+    "$ctl" KILL_ALL >/dev/null 2>&1 || true
+    sleep 1
+    for f in rohomieo-signaling.exe rohomieo-host.exe libunwind.dll libc++.dll libwinpthread-1.dll; do
+      [[ -f "$run_linux/staging/$f" ]] && cp -f "$run_linux/staging/$f" "$run_linux/$f"
+    done
+    if [[ -d "$run_linux/staging/web/dist" ]]; then
+      mkdir -p "$run_linux/web/dist"
+      cp -a "$run_linux/staging/web/dist/." "$run_linux/web/dist/" 2>/dev/null || true
+    fi
+    if [[ -d "$run_linux/staging/certs" ]]; then
+      mkdir -p "$run_linux/certs"
+      cp -f "$run_linux/staging/certs/"* "$run_linux/certs/" 2>/dev/null || true
+    fi
+  fi
+
+  host_w="${run_dir}\\rohomieo-host.exe"
+  sig_w="${run_dir}\\rohomieo-signaling.exe"
+  web_w="${run_dir}\\web\\dist"
+  cert_w="${run_dir}\\certs\\cert.pem"
+  key_w="${run_dir}\\certs\\key.pem"
+
+  "$ctl" FIREWALL_ADD || install_warn "broker FIREWALL_ADD failed"
+  "$ctl" DEFENDER_ADD "$run_dir" || true
+  "$ctl" KILL_ALL || true
+  sleep 1
+
+  if ! "$ctl" START_SIGNALING "$sig_w" --bind 0.0.0.0:8443 --web-root "$web_w" --cert "$cert_w" --key "$key_w"; then
+    install_warn "broker START_SIGNALING failed"
+    return 1
+  fi
+  local i ready=0
+  for i in $(seq 1 30); do
+    if setup_ps_windows_command \
+      "if (Get-NetTCPConnection -LocalPort 8443 -State Listen -EA SilentlyContinue) { 'yes' }" \
+      2>/dev/null | grep -q yes; then
+      ready=1
+      break
+    fi
+    sleep 1
+  done
+  [[ "$ready" -eq 1 ]] || {
+    install_warn "signaling did not open :8443"
+    return 1
+  }
+
+  if ! "$ctl" START_HOST "$host_w" --signaling wss://127.0.0.1:8443/ws; then
+    install_warn "broker START_HOST failed"
+    return 1
+  fi
+  install_ok "Windows allow + host via RohomieoBroker (no UAC)"
+  return 0
+}
+
+# One-time UAC: install LocalSystem broker service
+invoke_install_broker_uac() {
+  local ps_win win_user run_linux elev elev_w script_w
+  ps_win=$(setup_powershell_windows_bin) || return 1
+  win_user="$(detect_win_user)"
+  run_linux="/mnt/c/Users/${win_user}/AppData/Local/rohomieo-run"
+  mkdir -p "$run_linux"
+  cp -f "$ROOT/scripts/windows/install-broker.ps1" "$run_linux/install-broker.ps1"
+  sed -i 's/\r$//' "$run_linux/install-broker.ps1" 2>/dev/null || true
+  # Stage broker binaries into run dir for the installer to find
+  for f in rohomieo-broker.exe rohomieo-broker-ctl.exe; do
+    [[ -f "$ROOT/target/release/$f" ]] && cp -f "$ROOT/target/release/$f" "$run_linux/$f"
+  done
+  if [[ ! -f "$run_linux/rohomieo-broker.exe" ]]; then
+    install_warn "Broker not built — run ./scripts/build-windows-broker.sh"
+    return 1
+  fi
+  script_w=$(wslpath -w "$run_linux/install-broker.ps1")
+  elev="$run_linux/elevate-broker.ps1"
+  cat >"$elev" <<'ELEV'
+$ErrorActionPreference = 'Stop'
+$Host.UI.RawUI.WindowTitle = 'Rohomieo Broker — approve UAC (once)'
+Write-Host 'Install RohomieoBroker service (one UAC). Later installs need no elevation.' -ForegroundColor Cyan
+$script = Join-Path $env:LOCALAPPDATA 'rohomieo-run\install-broker.ps1'
+$p = Start-Process -FilePath (Get-Command powershell.exe).Source -Verb RunAs -PassThru -Wait -ArgumentList @(
+  '-NoProfile', '-ExecutionPolicy', 'Bypass', '-File', $script
+)
+exit $(if ($p) { $p.ExitCode } else { 1 })
+ELEV
+  elev_w=$(wslpath -w "$elev")
+  install_info "Installing RohomieoBroker — approve UAC once"
+  "$ps_win" -NoProfile -Command \
+    "Start-Process -FilePath 'powershell.exe' -ArgumentList @('-NoProfile','-ExecutionPolicy','Bypass','-File','$elev_w') -Wait" \
+    || true
+  sleep 2
+  broker_ping
+}
+
 invoke_windows_allow() {
+  # 1) Broker already installed → silent path
+  if invoke_windows_allow_via_broker; then
+    return 0
+  fi
+
+  # 2) Broker binaries present but service missing → one UAC to install service
+  local win_user run_linux
+  win_user="$(detect_win_user)"
+  run_linux="/mnt/c/Users/${win_user}/AppData/Local/rohomieo-run"
+  if [[ -f "$ROOT/target/release/rohomieo-broker.exe" ]] || [[ -f "$run_linux/rohomieo-broker.exe" ]]; then
+    if invoke_install_broker_uac; then
+      if invoke_windows_allow_via_broker; then
+        return 0
+      fi
+    fi
+    install_warn "Broker install/start failed — falling back to install-allow.ps1"
+  fi
+
   local ps_win
   ps_win=$(setup_powershell_windows_bin) || {
     install_warn "PowerShell not found — install pwsh, or use powershell.exe on WSL/Windows"
     return 1
   }
-  local win_user run_dir run_linux
-  win_user="$(detect_win_user)"
-  run_linux="/mnt/c/Users/${win_user}/AppData/Local/rohomieo-run"
-  mkdir -p "$run_linux"
+  local run_dir
   run_dir=$(wslpath -w "$run_linux" 2>/dev/null || echo "C:\\Users\\${win_user}\\AppData\\Local\\rohomieo-run")
+  mkdir -p "$run_linux"
 
   # Elevated admin cannot read \\wsl.localhost\... — copy scripts onto NTFS first
   cp -f "$ROOT/scripts/windows/install-allow.ps1" "$run_linux/install-allow.ps1"
@@ -380,6 +526,11 @@ build_windows_from_wsl() {
   else
     install_err "Windows build failed — see var/log/windows-build.log"
     return 1
+  fi
+  if "$ROOT/scripts/build-windows-broker.sh" >>"$ROOT/var/log/windows-build.log" 2>&1; then
+    install_ok "RohomieoBroker exes in target/release/"
+  else
+    install_warn "Broker build failed (optional) — see var/log/windows-build.log"
   fi
   export WIN_USER
   WIN_USER="$(detect_win_user)"

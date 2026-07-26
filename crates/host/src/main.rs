@@ -108,8 +108,19 @@ async fn main() -> Result<()> {
         args.public_url.as_deref(),
     );
 
+    info!("Rohomieo host connecting to signaling…");
+    // Register with signaling BEFORE showing the QR — otherwise a fast phone scan
+    // hits "session not found — host is not connected yet".
+    let client = SignalingClient::connect(
+        &args.signaling,
+        session_id.clone(),
+        pin.clone(),
+        Some(args.device_name),
+    )
+    .await?;
+
     info!("═══════════════════════════════════════");
-    info!("  Rohomieo host");
+    info!("  Rohomieo host — session is live");
     info!("  Session: {}", session_id);
     info!("  PIN:     {}", pin);
     info!("  Phone:   {}", join);
@@ -118,14 +129,6 @@ async fn main() -> Result<()> {
     if !args.no_qr {
         invite::print_invite_qr(&join);
     }
-
-    let client = SignalingClient::connect(
-        &args.signaling,
-        session_id,
-        pin,
-        Some(args.device_name),
-    )
-    .await?;
 
     let signaling = Arc::new(client);
     webrtc_peer::run_session(signaling, args.fps, args.idle_fps).await

@@ -66,8 +66,11 @@ function readInviteFromUrl(): Invite {
 export default function App() {
   const invite = readInviteFromUrl();
   const saved = loadSession();
+  // QR / deep-link joins must use THIS page's host for signaling — never a
+  // remembered wss://127.0.0.1 from a previous laptop browser session.
   const [signalingUrl, setSignalingUrl] = useState(
-    invite.signalingUrl ?? saved.signalingUrl ?? DEFAULT_WS
+    invite.signalingUrl ??
+      (invite.sessionId || invite.auto ? DEFAULT_WS : saved.signalingUrl ?? DEFAULT_WS)
   );
   const [sessionId, setSessionId] = useState(
     invite.sessionId ?? saved.sessionId ?? ""
@@ -139,11 +142,17 @@ export default function App() {
     viewer.connect(signalingUrl, sessionId.trim(), pin.trim());
   }, [signalingUrl, sessionId, pin, remember]);
 
+  // Mark started only when connect() actually runs. React StrictMode remounts
+  // clear the timeout; if we flipped the flag on schedule, remount would skip
+  // forever and leave "Joining from QR…" stuck on disconnected.
   useEffect(() => {
-    if (!invite.auto || autoStarted.current) return;
+    if (!invite.auto) return;
     if (!sessionId.trim() || !pin.trim()) return;
-    autoStarted.current = true;
-    const t = window.setTimeout(() => connect(), 50);
+    const t = window.setTimeout(() => {
+      if (autoStarted.current) return;
+      autoStarted.current = true;
+      connect();
+    }, 50);
     return () => clearTimeout(t);
   }, [invite.auto, sessionId, pin, connect]);
 
