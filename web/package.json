@@ -9,8 +9,13 @@
     "preview": "vite preview"
   },
   "dependencies": {
+<<<<<<< HEAD
+    "react": "^19.2.7",
+    "react-dom": "^19.2.8"
+=======
     "react": "^19.2.8",
     "react-dom": "^19.2.7"
+>>>>>>> origin/main
   },
   "devDependencies": {
     "@types/react": "^19.2.17",
