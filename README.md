@@ -35,7 +35,7 @@ Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Wind
 # Same Wi‑Fi (default)
 ./scripts/run.sh --local
 
-# Reachable from the internet (public IP + TURN + UPnP) — like couchlink --online
+# Reachable from the internet (UPnP, or auto tunnels if UPnP fails) — like couchlink --online
 ./scripts/run.sh --global
 # prints the web-UI join URL + QR in this terminal:
 #   https://YOUR_PUBLIC_IP:8443/?s=…&p=…&auto=1&turn=…
@@ -58,7 +58,7 @@ Open **https://127.0.0.1:8443** (or scan the **QR code** in the host window — 
 
 [infra/wireguard/README.md](infra/wireguard/README.md)
 
-Prefer **`./scripts/run.sh --global`** when you want the phone on cellular / another network without a VPN (needs router UPnP or manual forward of **TCP 8443** + **UDP/TCP 3478**).
+Prefer **`./scripts/run.sh --global`** when you want the phone on cellular / another network without a VPN. It tries UPnP; if that fails it opens outbound tunnels so you don’t need router port-forwards.
 
 ## iOS app
 

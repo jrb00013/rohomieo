@@ -5,7 +5,8 @@
 #
 # Reachability:
 #   --local   (default) same Wi‑Fi / LAN — join URL uses LAN IP, no UPnP/TURN
-#   --global  internet — public IP + TURN + UPnP so a phone can open the URL anywhere
+#   --global  internet — UPnP when possible; otherwise outbound tunnels
+#             (cloudflared + bore) so no router port-forwards are required
 set -euo pipefail
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
@@ -19,8 +20,8 @@ usage() {
 usage: $0 [--local|--global]
 
   --local   LAN only (default). Join URL uses LAN IP. No UPnP / TURN.
-  --global  Internet. Public IP + TURN + UPnP so a phone can open the URL
-            from anywhere (port-forward TCP 8443 + UDP/TCP 3478 if UPnP fails).
+  --global  Internet. Tries UPnP; if the router won't open ports, starts
+            outbound tunnels (cloudflared + bore) automatically.
 
 Platform is auto-detected (linux / wsl / macos).
 EOF
@@ -69,6 +70,8 @@ SCHEME="https"
 WS_SCHEME="wss"
 [[ "$SCHEME" == "http" ]] && WS_SCHEME="ws"
 
+NEED_TUNNELS=0
+
 ensure_turn_creds() {
   if [[ -n "${ROHOMIEO_TURN_USER:-}" && -n "${ROHOMIEO_TURN_PASS:-}" ]]; then
     return 0
@@ -88,7 +91,7 @@ export ROHOMIEO_SESSION="${ROHOMIEO_SESSION:-$(python3 -c 'import uuid; print(uu
 export ROHOMIEO_PIN="${ROHOMIEO_PIN:-$(python3 -c 'import random; print(f"{random.randint(100000,999999)}")')}"
 
 build_join_url() {
-  # Builds https://…:8443/?s=&p=&auto=1… pointing at the real web UI (not file://).
+  # Builds https://…/?s=&p=&auto=1… pointing at the real web UI (not file://).
   ROHOMIEO_PUBLIC_URL="${ROHOMIEO_PUBLIC_URL}" \
   ROHOMIEO_SESSION="${ROHOMIEO_SESSION}" \
   ROHOMIEO_PIN="${ROHOMIEO_PIN}" \
@@ -112,13 +115,57 @@ pw = os.environ.get("ROHOMIEO_TURN_PASS") or ""
 if turn and user and pw:
     ws_scheme = "ws" if parts.scheme == "http" else "wss"
     host = parts.hostname or "127.0.0.1"
-    port = parts.port or (80 if parts.scheme == "http" else 443)
-    q["ws"] = f"{ws_scheme}://{host}:{port}/ws"
+    port = parts.port
+    if port:
+        q["ws"] = f"{ws_scheme}://{host}:{port}/ws"
+    else:
+        q["ws"] = f"{ws_scheme}://{host}/ws"
     q["turn"] = turn
     q["turnu"] = user
     q["turnp"] = pw
 print(urlunparse((parts.scheme, parts.netloc, "/", "", urlencode(q), "")))
 PY
+}
+
+# Returns 0 if router UPnP mapped signaling TCP (and best-effort TURN).
+rohomieo_try_upnp_global() {
+  local lan="${1:-}"
+  local ok=0
+  # Prefer Windows NATUPnP when available (WSL miniupnpc often can't see the IGD).
+  if [[ "$PLATFORM" == "wsl" ]] && declare -F setup_powershell_windows_bin >/dev/null 2>&1; then
+    local ps_win bridge_w
+    ps_win="$(setup_powershell_windows_bin 2>/dev/null || true)"
+    bridge_w="$(wslpath -w "$ROOT/scripts/windows/open-ports-upnp.ps1" 2>/dev/null || true)"
+    if [[ -n "${ps_win:-}" && -n "${bridge_w:-}" ]]; then
+      if [[ -n "$lan" ]]; then
+        if "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$bridge_w" -LanIp "$lan"; then
+          ok=1
+        fi
+      else
+        if "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$bridge_w"; then
+          ok=1
+        fi
+      fi
+    fi
+  fi
+  if upnp_open "$PORT" tcp "signaling" "${lan:-}"; then
+    ok=1
+  fi
+  upnp_open 3478 udp "turn" "${lan:-}" || true
+  upnp_open 3478 tcp "turn" "${lan:-}" || true
+  return $((1 - ok))
+}
+
+rohomieo_start_tunnels_and_rewrite() {
+  local origin="$1"
+  # shellcheck disable=SC1090
+  eval "$("$ROOT/scripts/start-global-tunnels.sh" "$origin")"
+  export ROHOMIEO_PUBLIC_URL ROHOMIEO_TURN_URL
+  export ROHOMIEO_REACHABILITY=tunnel
+  [[ -n "${CLOUDFLARED_PID:-}" ]] && PIDS+=("$CLOUDFLARED_PID")
+  [[ -n "${BORE_PID:-}" ]] && PIDS+=("$BORE_PID")
+  JOIN_URL="$(build_join_url)"
+  export ROHOMIEO_JOIN_URL="$JOIN_URL"
 }
 
 if [[ "$MODE" == "local" ]]; then
@@ -133,19 +180,22 @@ else
   if [[ -z "$PUBLIC_IP" ]]; then
     PUBLIC_IP="$(curl -fsS --max-time 5 ifconfig.me 2>/dev/null || true)"
   fi
-  if [[ -z "$PUBLIC_IP" ]]; then
-    echo "global mode needs a public IP (curl ifconfig.me failed)." >&2
-    echo "Set ROHOMIEO_PUBLIC_IP in .env.rohomieo and re-run." >&2
-    exit 1
-  fi
-  export ROHOMIEO_PUBLIC_IP="$PUBLIC_IP"
-  # Host dials loopback — WSL/NAT often cannot hairpin back to the public IP.
-  # The printed invite still points at the public/WAN address (web UI).
   export ROHOMIEO_SIGNALING_URL="${WS_SCHEME}://127.0.0.1:${PORT}/ws"
-  export ROHOMIEO_PUBLIC_URL="${SCHEME}://${PUBLIC_IP}:${PORT}"
-  export ROHOMIEO_TURN_URL="turn:${PUBLIC_IP}:3478"
   ensure_turn_creds
-  echo "==> global mode — public IP ${PUBLIC_IP} (TURN + UPnP; host dials 127.0.0.1)"
+  if [[ -n "$PUBLIC_IP" ]]; then
+    export ROHOMIEO_PUBLIC_IP="$PUBLIC_IP"
+    # Placeholder invite until UPnP succeeds or tunnels rewrite these.
+    export ROHOMIEO_PUBLIC_URL="${SCHEME}://${PUBLIC_IP}:${PORT}"
+    export ROHOMIEO_TURN_URL="turn:${PUBLIC_IP}:3478"
+    echo "==> global mode — public IP ${PUBLIC_IP} (UPnP, or tunnels if router blocks)"
+  else
+    NEED_TUNNELS=1
+    LAN_IP="$(upnp_local_ip)"
+    LAN_IP="${LAN_IP:-127.0.0.1}"
+    export ROHOMIEO_PUBLIC_URL="${SCHEME}://${LAN_IP}:${PORT}"
+    export ROHOMIEO_TURN_URL="turn:127.0.0.1:3478"
+    echo "==> global mode — no public IP detected; will use outbound tunnels"
+  fi
 fi
 
 JOIN_URL="$(build_join_url)"
@@ -177,6 +227,13 @@ cleanup() {
   for pid in "${PIDS[@]:-}"; do
     kill "$pid" 2>/dev/null || true
   done
+  if [[ -f "$ROOT/var/run/tunnels.env" ]]; then
+    # shellcheck disable=SC1091
+    source "$ROOT/var/run/tunnels.env" || true
+    [[ -n "${CLOUDFLARED_PID:-}" ]] && kill "$CLOUDFLARED_PID" 2>/dev/null || true
+    [[ -n "${BORE_PID:-}" ]] && kill "$BORE_PID" 2>/dev/null || true
+    rm -f "$ROOT/var/run/tunnels.env"
+  fi
   if [[ "$PLATFORM" == "wsl" ]]; then
     if command -v taskkill.exe >/dev/null 2>&1; then
       taskkill.exe /IM rohomieo-host.exe /F >/dev/null 2>&1 || true
@@ -186,6 +243,33 @@ cleanup() {
   wait 2>/dev/null || true
 }
 trap cleanup EXIT INT TERM
+
+wait_for_our_turn() {
+  local turn_pid="$1"
+  local turn_ok=false
+  for _ in $(seq 1 30); do
+    if ! kill -0 "$turn_pid" 2>/dev/null; then
+      wait "$turn_pid" 2>/dev/null || true
+      echo "TURN failed to start — see messages above." >&2
+      exit 1
+    fi
+    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "pid=$turn_pid"; then
+      turn_ok=true
+      break
+    fi
+    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver" \
+      && pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver; then
+      turn_ok=true
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ "$turn_ok" != "true" ]]; then
+    echo "TURN did not bind :3478 within 15s." >&2
+    exit 1
+  fi
+  echo "==> TURN listening on :3478"
+}
 
 # WSL desktop capture lives on Windows — Windows signaling+host, TURN in WSL.
 if [[ "$PLATFORM" == "wsl" ]]; then
@@ -199,15 +283,23 @@ if [[ "$PLATFORM" == "wsl" ]]; then
   fi
   "$ROOT/scripts/sync-windows-run.sh" || true
 
+  WIN_LAN=""
+  if setup_powershell_windows_bin &>/dev/null; then
+    WIN_LAN=$(setup_ps_windows_command \
+      "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -match '^192\.168\.|^10\.' -and \$_.InterfaceAlias -notmatch 'WSL|vEthernet|Loopback' } | Select-Object -First 1).IPAddress" 2>/dev/null \
+      | tr -d '\r' || true)
+  fi
+  export WIN_LAN
+
   if [[ "$MODE" == "global" ]]; then
-    # Signaling listens on Windows — prefer Windows LAN IP for UPnP mapping.
-    WIN_LAN=""
-    if setup_powershell_windows_bin &>/dev/null; then
-      WIN_LAN=$(setup_ps_windows_command \
-        "(Get-NetIPAddress -AddressFamily IPv4 | Where-Object { \$_.IPAddress -match '^192\.168\.|^10\.' -and \$_.InterfaceAlias -notmatch 'WSL|vEthernet|Loopback' } | Select-Object -First 1).IPAddress" 2>/dev/null \
-        | tr -d '\r' || true)
+    if [[ "$NEED_TUNNELS" != "1" ]]; then
+      if ! rohomieo_try_upnp_global "${WIN_LAN:-}"; then
+        echo "==> router UPnP could not open ports — will use outbound tunnels after signaling is up"
+        NEED_TUNNELS=1
+      else
+        echo "==> UPnP OK — using public IP ${ROHOMIEO_PUBLIC_IP} for invite"
+      fi
     fi
-    upnp_open "$PORT" tcp "signaling" "${WIN_LAN:-}"
 
     if ss -ulnp 2>/dev/null | grep -q ':3478'; then
       echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
@@ -218,31 +310,7 @@ if [[ "$PLATFORM" == "wsl" ]]; then
     ./scripts/start-turn.sh &
     turn_pid=$!
     PIDS+=("$turn_pid")
-    # Wait until OUR turnserver child is listening (not some other process on :3478).
-    turn_ok=false
-    for _ in $(seq 1 30); do
-      if ! kill -0 "$turn_pid" 2>/dev/null; then
-        wait "$turn_pid" 2>/dev/null || true
-        echo "TURN failed to start — see messages above." >&2
-        exit 1
-      fi
-      if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "pid=$turn_pid"; then
-        turn_ok=true
-        break
-      fi
-      # Some ss builds only show the turnserver pid in the users=() field.
-      if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver" \
-        && pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver; then
-        turn_ok=true
-        break
-      fi
-      sleep 0.5
-    done
-    if [[ "$turn_ok" != "true" ]]; then
-      echo "TURN did not bind :3478 within 15s." >&2
-      exit 1
-    fi
-    echo "==> TURN listening on :3478"
+    wait_for_our_turn "$turn_pid"
   fi
 
   ps_win="$(setup_powershell_windows_bin 2>/dev/null || true)"
@@ -259,13 +327,30 @@ if [[ "$PLATFORM" == "wsl" ]]; then
     [[ -n "${ROHOMIEO_PIN:-}" ]] && ps_args+=(-Pin "$ROHOMIEO_PIN")
     "$ps_win" "${ps_args[@]}" &
     PIDS+=($!)
-    # Wait briefly for signaling/host, then print the web-UI invite in THIS terminal.
-    sleep 4
-    ./scripts/print-invite-qr.sh "$JOIN_URL"
-    if [[ "$MODE" == "global" ]]; then
-      echo "  Forward TCP ${PORT} + UDP/TCP 3478 if UPnP failed."
+    sleep 5
+
+    if [[ "$MODE" == "global" && "$NEED_TUNNELS" == "1" ]]; then
+      ORIGIN="${SCHEME}://${WIN_LAN:-127.0.0.1}:${PORT}"
+      rohomieo_start_tunnels_and_rewrite "$ORIGIN"
+      restart_w="$(wslpath -w "$ROOT/scripts/windows/restart-host.ps1" 2>/dev/null || true)"
+      if [[ -n "$restart_w" ]]; then
+        echo "==> restarting Windows host with tunnel invite"
+        "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$restart_w" \
+          -PublicUrl "$ROHOMIEO_PUBLIC_URL" \
+          -TurnUrl "$ROHOMIEO_TURN_URL" \
+          -TurnUser "$ROHOMIEO_TURN_USER" \
+          -TurnPass "$ROHOMIEO_TURN_PASS" \
+          -Session "$ROHOMIEO_SESSION" \
+          -Pin "$ROHOMIEO_PIN" || true
+        sleep 2
+      fi
     fi
-    echo "  Ctrl+C stops this session."
+
+    ./scripts/print-invite-qr.sh "$JOIN_URL"
+    if [[ "${ROHOMIEO_REACHABILITY:-}" == "tunnel" ]]; then
+      echo "  Reachability: outbound tunnels (no router ports)."
+    fi
+    echo "  Ctrl+C stops this session (and tunnels)."
     echo ""
     set +e
     wait "${PIDS[@]}"
@@ -280,6 +365,14 @@ fi
 PIDS+=($!)
 sleep 1
 if [[ "$MODE" == "global" ]]; then
+  if [[ "$NEED_TUNNELS" != "1" ]]; then
+    if ! rohomieo_try_upnp_global; then
+      echo "==> router UPnP could not open ports — will use outbound tunnels"
+      NEED_TUNNELS=1
+    else
+      echo "==> UPnP OK — using public IP ${ROHOMIEO_PUBLIC_IP} for invite"
+    fi
+  fi
   if ss -ulnp 2>/dev/null | grep -q ':3478'; then
     echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
     exit 1
@@ -287,32 +380,30 @@ if [[ "$MODE" == "global" ]]; then
   ./scripts/start-turn.sh &
   turn_pid=$!
   PIDS+=("$turn_pid")
-  turn_ok=false
-  for _ in $(seq 1 30); do
-    if ! kill -0 "$turn_pid" 2>/dev/null; then
-      wait "$turn_pid" 2>/dev/null || true
-      echo "TURN failed to start — see messages above." >&2
-      exit 1
-    fi
-    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver" \
-      && pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver; then
-      turn_ok=true
-      break
-    fi
-    sleep 0.5
-  done
-  if [[ "$turn_ok" != "true" ]]; then
-    echo "TURN did not bind :3478 within 15s." >&2
-    exit 1
-  fi
-  echo "==> TURN listening on :3478"
+  wait_for_our_turn "$turn_pid"
 fi
 ./scripts/start-host-fg.sh &
 PIDS+=($!)
 sleep 2
+
+if [[ "$MODE" == "global" && "$NEED_TUNNELS" == "1" ]]; then
+  ORIGIN="${SCHEME}://127.0.0.1:${PORT}"
+  rohomieo_start_tunnels_and_rewrite "$ORIGIN"
+  # Restart Linux host so its QR matches the tunnel invite.
+  for pid in "${PIDS[@]}"; do
+    if kill -0 "$pid" 2>/dev/null && tr '\0' ' ' <"/proc/$pid/cmdline" 2>/dev/null | grep -q 'rohomieo-host\|start-host'; then
+      kill "$pid" 2>/dev/null || true
+    fi
+  done
+  sleep 1
+  ./scripts/start-host-fg.sh &
+  PIDS+=($!)
+  sleep 2
+fi
+
 ./scripts/print-invite-qr.sh "$JOIN_URL"
-if [[ "$MODE" == "global" ]]; then
-  echo "  Forward TCP ${PORT} + UDP/TCP 3478 if UPnP failed."
+if [[ "${ROHOMIEO_REACHABILITY:-}" == "tunnel" ]]; then
+  echo "  Reachability: outbound tunnels (no router ports)."
 fi
 echo "  Ctrl+C stops this session."
 echo ""

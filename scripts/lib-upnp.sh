@@ -1,6 +1,6 @@
 # Sourced helper: best-effort automatic router port-forwarding via UPnP IGD
-# (miniupnpc). No-op with a warning if the router doesn't support UPnP —
-# falls back to whatever ports are already reachable.
+# (miniupnpc). Returns non-zero when the mapping fails so callers can fall back
+# to outbound tunnels (cloudflared + bore).
 
 upnp_local_ip() {
   if declare -F rohomieo_local_ip >/dev/null 2>&1; then
@@ -20,19 +20,21 @@ upnp_local_ip() {
 }
 
 # upnp_open <port> <tcp|udp> <description> [optional local IP]
+# Returns 0 on success, 1 on failure.
 upnp_open() {
   local port="$1" proto="$2" desc="$3" ip="${4:-}"
-  command -v upnpc >/dev/null || { echo "upnpc not installed — skipping UPnP for $desc ($port/$proto)"; return 0; }
+  command -v upnpc >/dev/null || { echo "upnpc not installed — skipping UPnP for $desc ($port/$proto)"; return 1; }
   if [[ -z "$ip" ]]; then
     ip="$(upnp_local_ip)"
   fi
-  [[ -z "$ip" ]] && return 0
-  # Routers sometimes hang on UPnP — never block session start.
+  [[ -z "$ip" ]] && return 1
+  # Routers sometimes hang on UPnP — never block session start longer than a few seconds.
   if timeout 5 upnpc -e "rohomieo-$desc" -a "$ip" "$port" "$port" "$proto" >/tmp/rohomieo-upnp.log 2>&1; then
     echo "==> UPnP: opened $port/$proto on router → $ip ($desc)"
-  else
-    echo "==> UPnP: router didn't accept $port/$proto ($desc) — forward it manually if clients can't connect"
+    return 0
   fi
+  echo "==> UPnP: router didn't accept $port/$proto ($desc)"
+  return 1
 }
 
 # upnp_close <port> <tcp|udp>
