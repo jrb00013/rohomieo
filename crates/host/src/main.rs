@@ -41,6 +41,16 @@ struct Args {
     #[arg(long, env = "ROHOMIEO_PUBLIC_URL")]
     public_url: Option<String>,
 
+    /// Local coturn relay, e.g. turn:1.2.3.4:3478 (see scripts/start-turn.sh / --global)
+    #[arg(long, env = "ROHOMIEO_TURN_URL")]
+    turn_url: Option<String>,
+
+    #[arg(long, env = "ROHOMIEO_TURN_USER")]
+    turn_user: Option<String>,
+
+    #[arg(long, env = "ROHOMIEO_TURN_PASS")]
+    turn_pass: Option<String>,
+
     /// Session ID (share with viewer); random UUID if omitted
     #[arg(long)]
     session: Option<String>,
@@ -102,11 +112,16 @@ async fn main() -> Result<()> {
         .unwrap_or_else(|| uuid::Uuid::new_v4().to_string());
     let pin = args.pin.unwrap_or_else(gen_pin);
 
+    let turn = match (&args.turn_url, &args.turn_user, &args.turn_pass) {
+        (Some(url), Some(user), Some(pass)) => Some(invite::TurnInfo { url, user, pass }),
+        _ => None,
+    };
     let join = invite::join_url(
         &args.signaling,
         &session_id,
         &pin,
         args.public_url.as_deref(),
+        turn,
     );
 
     info!("Rohomieo host connecting to signaling…");
@@ -132,7 +147,15 @@ async fn main() -> Result<()> {
     }
 
     let signaling = Arc::new(client);
-    webrtc_peer::run_session(signaling, args.fps, args.idle_fps).await
+    webrtc_peer::run_session(
+        signaling,
+        args.fps,
+        args.idle_fps,
+        args.turn_url,
+        args.turn_user,
+        args.turn_pass,
+    )
+    .await
 }
 
 fn gen_pin() -> String {

@@ -24,6 +24,7 @@ use webrtc::data_channel::data_channel_state::RTCDataChannelState;
 use webrtc::data_channel::RTCDataChannel;
 use webrtc::ice_transport::ice_candidate::RTCIceCandidateInit;
 use webrtc::ice_transport::ice_candidate_type::RTCIceCandidateType;
+use webrtc::ice_transport::ice_server::RTCIceServer;
 use webrtc::interceptor::registry::Registry;
 use webrtc::media::Sample;
 use webrtc::peer_connection::configuration::RTCConfiguration;
@@ -91,6 +92,9 @@ impl WebRtcHost {
     pub async fn new(
         signaling: Arc<SignalingClient>,
         input_slot: Arc<Mutex<Option<InputInjector>>>,
+        turn_url: Option<String>,
+        turn_user: Option<String>,
+        turn_pass: Option<String>,
     ) -> Result<Self> {
         let mut m = MediaEngine::default();
         m.register_default_codecs()?;
@@ -121,8 +125,30 @@ impl WebRtcHost {
             .with_interceptor_registry(registry)
             .build();
 
+        // Public STUN for NAT discovery, plus optional TURN (scripts/run.sh --global).
+        let mut ice_servers = vec![RTCIceServer {
+            urls: vec![
+                "stun:stun.l.google.com:19302".to_owned(),
+                "stun:stun1.l.google.com:19302".to_owned(),
+            ],
+            ..Default::default()
+        }];
+        if let (Some(url), Some(user), Some(pass)) = (turn_url, turn_user, turn_pass) {
+            let mut urls = vec![url.clone()];
+            if !url.to_ascii_lowercase().contains("transport=tcp") {
+                let sep = if url.contains('?') { '&' } else { '?' };
+                urls.push(format!("{url}{sep}transport=tcp"));
+            }
+            info!("ICE TURN urls: {urls:?}");
+            ice_servers.push(RTCIceServer {
+                urls,
+                username: user,
+                credential: pass,
+                ..Default::default()
+            });
+        }
         let config = RTCConfiguration {
-            ice_servers: vec![],
+            ice_servers,
             ..Default::default()
         };
 
@@ -492,6 +518,9 @@ pub async fn run_session(
     signaling: Arc<SignalingClient>,
     target_fps: u32,
     idle_fps: u32,
+    turn_url: Option<String>,
+    turn_user: Option<String>,
+    turn_pass: Option<String>,
 ) -> Result<()> {
     // Fresh PeerConnection per viewer — reusing a Failed PC after phone
     // disconnect makes the next scan look "dead" even with a live QR.
@@ -507,7 +536,14 @@ pub async fn run_session(
                     let _ = old.pc.close().await;
                 }
                 info!("viewer joined — new peer connection + offer");
-                let h = WebRtcHost::new(Arc::clone(&signaling), Arc::clone(&input_slot)).await?;
+                let h = WebRtcHost::new(
+                    Arc::clone(&signaling),
+                    Arc::clone(&input_slot),
+                    turn_url.clone(),
+                    turn_user.clone(),
+                    turn_pass.clone(),
+                )
+                .await?;
                 h.spawn_capture_loop(target_fps, idle_fps, Arc::clone(&input_slot));
                 h.create_and_send_offer().await?;
                 host = Some(h);

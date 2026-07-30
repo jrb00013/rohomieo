@@ -1,5 +1,15 @@
 # Start signaling (wait for :8443), then host. LAN = Windows IP, no WSL portproxy.
-param([switch]$SkipFirewall)
+# Optional reachability overrides (from scripts/run.sh --global):
+#   -PublicUrl  https://PUBLIC_IP:8443
+#   -TurnUrl    turn:PUBLIC_IP:3478
+#   -TurnUser / -TurnPass
+param(
+    [switch]$SkipFirewall,
+    [string]$PublicUrl = "",
+    [string]$TurnUrl = "",
+    [string]$TurnUser = "",
+    [string]$TurnPass = ""
+)
 
 $ErrorActionPreference = "Stop"
 $Run = Join-Path $env:LOCALAPPDATA "rohomieo-run"
@@ -17,6 +27,16 @@ if (-not $SkipFirewall) {
             New-NetFirewallRule -DisplayName "Rohomieo-Signaling-TCP" -Direction Inbound -Action Allow `
                 -Protocol TCP -LocalPort 8443 -Profile Any -ErrorAction Stop | Out-Null
             Write-Host "OK  firewall: inbound TCP 8443" -ForegroundColor Green
+        }
+        if ($TurnUrl) {
+            $turnRule = Get-NetFirewallRule -DisplayName "Rohomieo-TURN" -ErrorAction SilentlyContinue
+            if (-not $turnRule) {
+                New-NetFirewallRule -DisplayName "Rohomieo-TURN" -Direction Inbound -Action Allow `
+                    -Protocol UDP -LocalPort 3478 -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                New-NetFirewallRule -DisplayName "Rohomieo-TURN-TCP" -Direction Inbound -Action Allow `
+                    -Protocol TCP -LocalPort 3478 -Profile Any -ErrorAction SilentlyContinue | Out-Null
+                Write-Host "OK  firewall: inbound UDP/TCP 3478 (TURN)" -ForegroundColor Green
+            }
         }
     } catch {
         Write-Warning "Firewall: run enable-phone-access.ps1 as Administrator once (phone on Wi-Fi)"
@@ -60,11 +80,17 @@ if (-not $ready) {
 
 Write-Host "OK  signaling on :8443" -ForegroundColor Green
 
+$hostArgs = @("--signaling", "wss://127.0.0.1:8443/ws")
+if ($PublicUrl) { $hostArgs += @("--public-url", $PublicUrl) }
+if ($TurnUrl) { $hostArgs += @("--turn-url", $TurnUrl) }
+if ($TurnUser) { $hostArgs += @("--turn-user", $TurnUser) }
+if ($TurnPass) { $hostArgs += @("--turn-pass", $TurnPass) }
+
 Write-Host "Starting host..." -ForegroundColor Cyan
 try {
     Start-Process -FilePath (Join-Path $Run "rohomieo-host.exe") `
         -WorkingDirectory $Run `
-        -ArgumentList @("--signaling", "wss://127.0.0.1:8443/ws") `
+        -ArgumentList $hostArgs `
         -WindowStyle Normal -ErrorAction Stop
 } catch {
     Write-Warning "Host blocked by App Control. From WSL run: ./install.sh --allow"
@@ -77,6 +103,12 @@ $lan = (Get-NetIPAddress -AddressFamily IPv4 |
     Select-Object -First 1).IPAddress
 
 Write-Host ""
+if ($PublicUrl) {
+    Write-Host "Internet (global):  $PublicUrl" -ForegroundColor Yellow
+    if ($TurnUrl) {
+        Write-Host "TURN relay:         $TurnUrl" -ForegroundColor DarkGray
+    }
+}
 Write-Host "Phone (same Wi-Fi):  https://${lan}:8443" -ForegroundColor Yellow
 Write-Host "Session + PIN: host window" -ForegroundColor Green
 Write-Host ""

@@ -24,14 +24,23 @@ Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Wind
 
 | Platform | Start |
 |----------|-------|
+| **Internet (`--global`)** | `./scripts/run.sh --global` |
+| **LAN only** | `./scripts/run.sh` or `./scripts/run.sh --local` |
 | WSL + Windows desktop | `./setup.sh --start` |
 | Linux | `./scripts/start-linux.sh` |
 | macOS | `./scripts/start-macos.sh` |
 | Windows only | `powershell -File scripts\windows\run-bridge.ps1` |
 
 ```bash
+# Same Wi‑Fi (default)
+./scripts/run.sh --local
+
+# Reachable from the internet (public IP + TURN + UPnP) — like couchlink --online
+./scripts/run.sh --global
+# prints / QR: https://YOUR_PUBLIC_IP:8443/?s=…&p=…&auto=1&turn=…
+
 source ~/rohomieo/.env.rohomieo
-~/.local/bin/rohomieo-signaling   # or use start-*.sh above
+~/.local/bin/rohomieo-signaling   # or use start-*.sh / run.sh above
 ~/.local/bin/rohomieo-host
 ```
 
@@ -46,6 +55,8 @@ Open **https://127.0.0.1:8443** (or scan the **QR code** in the host window — 
 ## WireGuard (phone off home Wi‑Fi)
 
 [infra/wireguard/README.md](infra/wireguard/README.md)
+
+Prefer **`./scripts/run.sh --global`** when you want the phone on cellular / another network without a VPN (needs router UPnP or manual forward of **TCP 8443** + **UDP/TCP 3478**).
 
 ## iOS app
 

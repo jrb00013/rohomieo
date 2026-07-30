@@ -16,6 +16,8 @@ See also [ROADMAP.md](ROADMAP.md) for planned features.
 
 | Platform | Command |
 |----------|---------|
+| **Internet** | `./scripts/run.sh --global` (public IP + TURN + UPnP) |
+| **LAN** | `./scripts/run.sh --local` |
 | Windows | `powershell -File scripts\start-windows-host.ps1` |
 | WSL | `./scripts/start-wsl.sh` + Windows host script above |
 | Linux | `./scripts/start-linux.sh` |
@@ -27,6 +29,8 @@ Host prints:
 Session: <uuid>
 PIN:     123456
 ```
+
+With `--global`, the QR / join URL uses your public IP and embeds TURN credentials so a phone off your Wi‑Fi can connect (forward **TCP 8443** and **UDP/TCP 3478** if UPnP fails). Set `ROHOMIEO_PUBLIC_IP` in `.env.rohomieo` if auto-detect fails.
 
 ## 3. Connect from browser
 
