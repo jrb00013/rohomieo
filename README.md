@@ -37,7 +37,9 @@ Shell scripts (`setup-*.sh`) complement **`scripts/setup-windows.ps1`** — Wind
 
 # Reachable from the internet (public IP + TURN + UPnP) — like couchlink --online
 ./scripts/run.sh --global
-# prints / QR: https://YOUR_PUBLIC_IP:8443/?s=…&p=…&auto=1&turn=…
+# prints the web-UI join URL + QR in this terminal:
+#   https://YOUR_PUBLIC_IP:8443/?s=…&p=…&auto=1&turn=…
+# Phone opens that link (Rohomieo PWA), accepts the cert warning, auto-connects.
 
 source ~/rohomieo/.env.rohomieo
 ~/.local/bin/rohomieo-signaling   # or use start-*.sh / run.sh above

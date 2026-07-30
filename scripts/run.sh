@@ -83,6 +83,44 @@ ensure_turn_creds() {
   echo "==> generated TURN credentials, saved to .env.rohomieo"
 }
 
+# Fixed session/PIN for this run so we can print the web-UI invite in this terminal.
+export ROHOMIEO_SESSION="${ROHOMIEO_SESSION:-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
+export ROHOMIEO_PIN="${ROHOMIEO_PIN:-$(python3 -c 'import random; print(f"{random.randint(100000,999999)}")')}"
+
+build_join_url() {
+  # Builds https://…:8443/?s=&p=&auto=1… pointing at the real web UI (not file://).
+  ROHOMIEO_PUBLIC_URL="${ROHOMIEO_PUBLIC_URL}" \
+  ROHOMIEO_SESSION="${ROHOMIEO_SESSION}" \
+  ROHOMIEO_PIN="${ROHOMIEO_PIN}" \
+  ROHOMIEO_TURN_URL="${ROHOMIEO_TURN_URL:-}" \
+  ROHOMIEO_TURN_USER="${ROHOMIEO_TURN_USER:-}" \
+  ROHOMIEO_TURN_PASS="${ROHOMIEO_TURN_PASS:-}" \
+  python3 - <<'PY'
+import os
+from urllib.parse import urlencode, urlparse, urlunparse
+
+base = os.environ["ROHOMIEO_PUBLIC_URL"].rstrip("/")
+parts = urlparse(base if "://" in base else f"https://{base}")
+q = {
+    "s": os.environ["ROHOMIEO_SESSION"],
+    "p": os.environ["ROHOMIEO_PIN"],
+    "auto": "1",
+}
+turn = os.environ.get("ROHOMIEO_TURN_URL") or ""
+user = os.environ.get("ROHOMIEO_TURN_USER") or ""
+pw = os.environ.get("ROHOMIEO_TURN_PASS") or ""
+if turn and user and pw:
+    ws_scheme = "ws" if parts.scheme == "http" else "wss"
+    host = parts.hostname or "127.0.0.1"
+    port = parts.port or (80 if parts.scheme == "http" else 443)
+    q["ws"] = f"{ws_scheme}://{host}:{port}/ws"
+    q["turn"] = turn
+    q["turnu"] = user
+    q["turnp"] = pw
+print(urlunparse((parts.scheme, parts.netloc, "/", "", urlencode(q), "")))
+PY
+}
+
 if [[ "$MODE" == "local" ]]; then
   LAN_IP="$(upnp_local_ip)"
   LAN_IP="${LAN_IP:-127.0.0.1}"
@@ -102,7 +140,7 @@ else
   fi
   export ROHOMIEO_PUBLIC_IP="$PUBLIC_IP"
   # Host dials loopback — WSL/NAT often cannot hairpin back to the public IP.
-  # The printed invite still points at the public/WAN address.
+  # The printed invite still points at the public/WAN address (web UI).
   export ROHOMIEO_SIGNALING_URL="${WS_SCHEME}://127.0.0.1:${PORT}/ws"
   export ROHOMIEO_PUBLIC_URL="${SCHEME}://${PUBLIC_IP}:${PORT}"
   export ROHOMIEO_TURN_URL="turn:${PUBLIC_IP}:3478"
@@ -110,6 +148,8 @@ else
   echo "==> global mode — public IP ${PUBLIC_IP} (TURN + UPnP; host dials 127.0.0.1)"
 fi
 
+JOIN_URL="$(build_join_url)"
+export ROHOMIEO_JOIN_URL="$JOIN_URL"
 # Ensure web UI + certs exist for a fresh clone.
 if [[ ! -d "$ROOT/web/dist" ]]; then
   echo "==> building web UI"
@@ -209,24 +249,24 @@ if [[ "$PLATFORM" == "wsl" ]]; then
   bridge="$ROOT/scripts/windows/run-bridge.ps1"
   bridge_w="$(wslpath -w "$bridge" 2>/dev/null || true)"
   if [[ -n "${ps_win:-}" && -n "${bridge_w:-}" ]]; then
-    echo "==> WSL: starting Windows signaling + host (QR/session in host window)"
+    echo "==> WSL: starting Windows signaling + host"
     ps_args=(-NoProfile -ExecutionPolicy Bypass -File "$bridge_w")
     [[ -n "${ROHOMIEO_PUBLIC_URL:-}" ]] && ps_args+=(-PublicUrl "$ROHOMIEO_PUBLIC_URL")
     [[ -n "${ROHOMIEO_TURN_URL:-}" ]] && ps_args+=(-TurnUrl "$ROHOMIEO_TURN_URL")
     [[ -n "${ROHOMIEO_TURN_USER:-}" ]] && ps_args+=(-TurnUser "$ROHOMIEO_TURN_USER")
     [[ -n "${ROHOMIEO_TURN_PASS:-}" ]] && ps_args+=(-TurnPass "$ROHOMIEO_TURN_PASS")
+    [[ -n "${ROHOMIEO_SESSION:-}" ]] && ps_args+=(-Session "$ROHOMIEO_SESSION")
+    [[ -n "${ROHOMIEO_PIN:-}" ]] && ps_args+=(-Pin "$ROHOMIEO_PIN")
     "$ps_win" "${ps_args[@]}" &
     PIDS+=($!)
-    echo ""
+    # Wait briefly for signaling/host, then print the web-UI invite in THIS terminal.
+    sleep 4
+    ./scripts/print-invite-qr.sh "$JOIN_URL"
     if [[ "$MODE" == "global" ]]; then
-      echo "  Global invite: ${ROHOMIEO_PUBLIC_URL} (QR in Windows host window)"
       echo "  Forward TCP ${PORT} + UDP/TCP 3478 if UPnP failed."
-    else
-      echo "  Local invite: scan QR in Windows host window (LAN IP)."
     fi
     echo "  Ctrl+C stops this session."
     echo ""
-    # run-bridge.ps1 waits on signaling; when it exits we tear down TURN + Windows procs.
     set +e
     wait "${PIDS[@]}"
     ec=$?
@@ -269,6 +309,13 @@ if [[ "$MODE" == "global" ]]; then
 fi
 ./scripts/start-host-fg.sh &
 PIDS+=($!)
+sleep 2
+./scripts/print-invite-qr.sh "$JOIN_URL"
+if [[ "$MODE" == "global" ]]; then
+  echo "  Forward TCP ${PORT} + UDP/TCP 3478 if UPnP failed."
+fi
+echo "  Ctrl+C stops this session."
+echo ""
 
 if [[ "${BASH_VERSINFO[0]}" -gt 4 ]] \
   || { [[ "${BASH_VERSINFO[0]}" -eq 4 ]] && [[ "${BASH_VERSINFO[1]}" -ge 3 ]]; }; then

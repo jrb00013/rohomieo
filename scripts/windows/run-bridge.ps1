@@ -1,14 +1,16 @@
 # Start signaling (wait for :8443), then host. LAN = Windows IP, no WSL portproxy.
-# Optional reachability overrides (from scripts/run.sh --global):
-#   -PublicUrl  https://PUBLIC_IP:8443
-#   -TurnUrl    turn:PUBLIC_IP:3478
-#   -TurnUser / -TurnPass
+# Optional reachability overrides (from scripts/run.sh --global / --local):
+#   -PublicUrl  https://PUBLIC_OR_LAN:8443
+#   -TurnUrl / -TurnUser / -TurnPass
+#   -Session / -Pin  (fixed invite so run.sh can print the web-UI QR)
 param(
     [switch]$SkipFirewall,
     [string]$PublicUrl = "",
     [string]$TurnUrl = "",
     [string]$TurnUser = "",
-    [string]$TurnPass = ""
+    [string]$TurnPass = "",
+    [string]$Session = "",
+    [string]$Pin = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -43,7 +45,6 @@ if (-not $SkipFirewall) {
     }
 }
 
-# Clear MOTW so Smart App Control / Defender are less likely to block
 Get-ChildItem -Path $Run -File -ErrorAction SilentlyContinue |
     Where-Object { $_.Extension -in '.exe', '.dll' } |
     ForEach-Object {
@@ -51,11 +52,9 @@ Get-ChildItem -Path $Run -File -ErrorAction SilentlyContinue |
         Remove-Item -LiteralPath ($_.FullName + ":Zone.Identifier") -Force -ErrorAction SilentlyContinue
     }
 
-# Stop old instances
 Get-Process rohomieo-signaling, rohomieo-host -ErrorAction SilentlyContinue | Stop-Process -Force
 Start-Sleep -Milliseconds 500
 
-# Promote WSL-staged build (sync-windows-run.sh only writes staging/).
 $stage = Join-Path $Run "staging"
 if (Test-Path (Join-Path $stage "rohomieo-signaling.exe")) {
     Write-Host "Promoting staging -> run dir..." -ForegroundColor Cyan
@@ -107,8 +106,6 @@ $lan = (Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.IPAddress -match '^192\.168\.' -and $_.InterfaceAlias -notmatch 'WSL|vEthernet' } |
     Select-Object -First 1).IPAddress
 
-# WSL mirrored networking often binds wslrelay on 127.0.0.1:8443, so a Windows
-# host dialing loopback hits WSL (wrong stack / plain HTTP). Prefer LAN IP.
 $signalingHost = "127.0.0.1"
 $loop = Get-NetTCPConnection -LocalPort 8443 -State Listen -ErrorAction SilentlyContinue |
     Where-Object { $_.LocalAddress -eq "127.0.0.1" }
@@ -126,6 +123,8 @@ if ($PublicUrl) { $hostArgs += @("--public-url", $PublicUrl) }
 if ($TurnUrl) { $hostArgs += @("--turn-url", $TurnUrl) }
 if ($TurnUser) { $hostArgs += @("--turn-user", $TurnUser) }
 if ($TurnPass) { $hostArgs += @("--turn-pass", $TurnPass) }
+if ($Session) { $hostArgs += @("--session", $Session) }
+if ($Pin) { $hostArgs += @("--pin", $Pin) }
 
 Write-Host "Starting host..." -ForegroundColor Cyan
 try {
@@ -146,7 +145,11 @@ if ($hostProc.HasExited) {
 
 Write-Host ""
 if ($PublicUrl) {
-    Write-Host "Internet (global):  $PublicUrl" -ForegroundColor Yellow
+    Write-Host "Web UI invite base: $PublicUrl" -ForegroundColor Yellow
+    if ($Session -and $Pin) {
+        Write-Host ("Session: {0}  PIN: {1}" -f $Session, $Pin) -ForegroundColor Green
+        Write-Host "Scan the QR printed in the WSL/terminal (or host window)." -ForegroundColor Green
+    }
     if ($TurnUrl) {
         Write-Host "TURN relay:         $TurnUrl" -ForegroundColor DarkGray
     }
@@ -154,11 +157,9 @@ if ($PublicUrl) {
 if ($lan) {
     Write-Host "Phone (same Wi-Fi):  https://${lan}:8443" -ForegroundColor Yellow
 }
-Write-Host "Session + PIN: host window" -ForegroundColor Green
 Write-Host "Keep this window open while the session runs." -ForegroundColor DarkGray
 Write-Host ""
 
-# Stay alive while signaling runs so callers (scripts/run.sh) can wait on us.
 try {
     Wait-Process -Id $sig.Id
 } catch {

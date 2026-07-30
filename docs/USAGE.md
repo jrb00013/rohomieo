@@ -30,7 +30,7 @@ Session: <uuid>
 PIN:     123456
 ```
 
-With `--global`, the QR / join URL uses your public IP and embeds TURN credentials so a phone off your Wi‑Fi can connect (forward **TCP 8443** and **UDP/TCP 3478** if UPnP fails). Set `ROHOMIEO_PUBLIC_IP` in `.env.rohomieo` if auto-detect fails.
+With `--global`, the QR / join URL uses your public IP and embeds TURN credentials so a phone off your Wi‑Fi can connect (forward **TCP 8443** and **UDP/TCP 3478** if UPnP fails). The link opens the **Rohomieo web UI** (`https://…:8443/?s=…&p=…`); `run.sh` prints that URL + a terminal QR. Set `ROHOMIEO_PUBLIC_IP` in `.env.rohomieo` if auto-detect fails.
 
 ## 3. Connect from browser
 
