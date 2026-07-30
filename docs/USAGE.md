@@ -30,7 +30,7 @@ Session: <uuid>
 PIN:     123456
 ```
 
-With `--global`, Rohomieo tries UPnP first. On WSL/Windows it can elevate once (`./scripts/enable-upnp.sh`) to set the Wi‑Fi profile to **Private**, turn on Network Discovery, and start SSDP/UPnP services — then retry port maps. If the **router** still has UPnP/IGD disabled (common on ISP gateways), it automatically starts outbound tunnels (**cloudflared** + **bore**). Treat the join URL like a password. Admin endpoints (`/api/audit`, `/metrics`) stay off in `--global`.
+With `--global`, Rohomieo tries UPnP first. On WSL/Windows it can elevate once (`./scripts/enable-upnp.sh`) to set the Wi‑Fi profile to **Private**, enable Network Discovery, and map ports. To flip UPnP **on the gateway itself** without clicking the UI, use credentialed admin form replay: `./scripts/enable-gateway-upnp.sh` (Copy-as-cURL into `~/.config/rohomieo/gateway.env`). If the ISP gateway still blocks UPnP, outbound tunnels (**cloudflared** + **bore**) stay the automatic fallback. Treat the join URL like a password. Admin endpoints (`/api/audit`, `/metrics`) stay off in `--global`.
 
 
 ## 3. Connect from browser

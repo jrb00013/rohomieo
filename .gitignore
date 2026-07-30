@@ -8,6 +8,7 @@ var/
 .env.rohomieo
 .env.rohomieo.*
 !.env.rohomieo.example
+var/gateway.env
 .local/
 SETUP_STATUS.txt
 web/tsconfig.tsbuildinfo
