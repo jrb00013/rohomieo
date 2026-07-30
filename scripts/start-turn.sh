@@ -77,6 +77,13 @@ if [[ -z "$PUBLIC_IP" ]]; then
 fi
 ROHOMIEO_TURN_URL="${ROHOMIEO_TURN_URL:-turn:$PUBLIC_IP:3478}"
 
+# Fail fast if something else already owns :3478 (e.g. another couchlink/rohomieo session).
+if ss -ulnp 2>/dev/null | grep -q ':3478'; then
+  echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
+  ss -ulnp 2>/dev/null | grep ':3478' | head -3 >&2 || true
+  exit 1
+fi
+
 RUNTIME_CONF="$(mktemp /tmp/rohomieo-turnserver.XXXXXX.conf)"
 trap 'rm -f "$RUNTIME_CONF"; upnp_close 3478 udp; upnp_close 3478 tcp' EXIT
 sed \
@@ -84,6 +91,12 @@ sed \
   -e "s/ROHOMIEO_TURN_PASS/$ROHOMIEO_TURN_PASS/" \
   "$ROOT/infra/turn/turnserver.conf.example" > "$RUNTIME_CONF"
 echo "external-ip=$PUBLIC_IP" >> "$RUNTIME_CONF"
+# Avoid needing root for /var/run/turnserver.pid
+echo "pidfile=/tmp/rohomieo-turnserver.pid" >> "$RUNTIME_CONF"
+# Quiet noisy discovery across every docker/WSL bridge NIC
+echo "listening-ip=0.0.0.0" >> "$RUNTIME_CONF"
+_RELAY_IP="$(upnp_local_ip)"
+[[ -n "$_RELAY_IP" ]] && echo "relay-ip=$_RELAY_IP" >> "$RUNTIME_CONF"
 
 upnp_open 3478 udp "turn"
 upnp_open 3478 tcp "turn"

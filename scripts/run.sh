@@ -168,9 +168,41 @@ if [[ "$PLATFORM" == "wsl" ]]; then
         | tr -d '\r' || true)
     fi
     upnp_open "$PORT" tcp "signaling" "${WIN_LAN:-}"
+
+    if ss -ulnp 2>/dev/null | grep -q ':3478'; then
+      echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
+      ss -ulnp 2>/dev/null | grep ':3478' | head -3 >&2 || true
+      exit 1
+    fi
+
     ./scripts/start-turn.sh &
-    PIDS+=($!)
-    sleep 1
+    turn_pid=$!
+    PIDS+=("$turn_pid")
+    # Wait until OUR turnserver child is listening (not some other process on :3478).
+    turn_ok=false
+    for _ in $(seq 1 30); do
+      if ! kill -0 "$turn_pid" 2>/dev/null; then
+        wait "$turn_pid" 2>/dev/null || true
+        echo "TURN failed to start — see messages above." >&2
+        exit 1
+      fi
+      if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "pid=$turn_pid"; then
+        turn_ok=true
+        break
+      fi
+      # Some ss builds only show the turnserver pid in the users=() field.
+      if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver" \
+        && pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver; then
+        turn_ok=true
+        break
+      fi
+      sleep 0.5
+    done
+    if [[ "$turn_ok" != "true" ]]; then
+      echo "TURN did not bind :3478 within 15s." >&2
+      exit 1
+    fi
+    echo "==> TURN listening on :3478"
   fi
 
   ps_win="$(setup_powershell_windows_bin 2>/dev/null || true)"
@@ -194,8 +226,12 @@ if [[ "$PLATFORM" == "wsl" ]]; then
     fi
     echo "  Ctrl+C stops this session."
     echo ""
+    # run-bridge.ps1 waits on signaling; when it exits we tear down TURN + Windows procs.
+    set +e
     wait "${PIDS[@]}"
-    exit 0
+    ec=$?
+    set -e
+    exit "$ec"
   fi
   echo "==> WSL: Windows bridge unavailable — falling back to Linux binaries" >&2
 fi
@@ -204,9 +240,32 @@ fi
 PIDS+=($!)
 sleep 1
 if [[ "$MODE" == "global" ]]; then
+  if ss -ulnp 2>/dev/null | grep -q ':3478'; then
+    echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
+    exit 1
+  fi
   ./scripts/start-turn.sh &
-  PIDS+=($!)
-  sleep 1
+  turn_pid=$!
+  PIDS+=("$turn_pid")
+  turn_ok=false
+  for _ in $(seq 1 30); do
+    if ! kill -0 "$turn_pid" 2>/dev/null; then
+      wait "$turn_pid" 2>/dev/null || true
+      echo "TURN failed to start — see messages above." >&2
+      exit 1
+    fi
+    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver" \
+      && pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver; then
+      turn_ok=true
+      break
+    fi
+    sleep 0.5
+  done
+  if [[ "$turn_ok" != "true" ]]; then
+    echo "TURN did not bind :3478 within 15s." >&2
+    exit 1
+  fi
+  echo "==> TURN listening on :3478"
 fi
 ./scripts/start-host-fg.sh &
 PIDS+=($!)

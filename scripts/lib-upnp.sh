@@ -27,7 +27,8 @@ upnp_open() {
     ip="$(upnp_local_ip)"
   fi
   [[ -z "$ip" ]] && return 0
-  if upnpc -e "rohomieo-$desc" -a "$ip" "$port" "$port" "$proto" >/tmp/rohomieo-upnp.log 2>&1; then
+  # Routers sometimes hang on UPnP — never block session start.
+  if timeout 5 upnpc -e "rohomieo-$desc" -a "$ip" "$port" "$port" "$proto" >/tmp/rohomieo-upnp.log 2>&1; then
     echo "==> UPnP: opened $port/$proto on router → $ip ($desc)"
   else
     echo "==> UPnP: router didn't accept $port/$proto ($desc) — forward it manually if clients can't connect"
@@ -38,5 +39,5 @@ upnp_open() {
 upnp_close() {
   local port="$1" proto="$2"
   command -v upnpc >/dev/null || return 0
-  upnpc -d "$port" "$proto" >/dev/null 2>&1 || true
+  timeout 3 upnpc -d "$port" "$proto" >/dev/null 2>&1 || true
 }
