@@ -16,6 +16,18 @@ if (-not $rule) {
     Write-Host "OK  firewall rule already exists" -ForegroundColor Green
 }
 
+# Also prep Windows for real router UPnP (Private profile + discovery). Best-effort.
+$enableUpnp = Join-Path $PSScriptRoot "enable-upnp.ps1"
+if (Test-Path $enableUpnp) {
+    Write-Host "Rohomieo: preparing Windows for UPnP…" -ForegroundColor Cyan
+    $p = Start-Process -FilePath (Get-Command powershell.exe).Source -Wait -PassThru -ArgumentList @(
+        "-NoProfile", "-ExecutionPolicy", "Bypass", "-File", $enableUpnp, "-SkipMap"
+    )
+    if ($p.ExitCode -notin 0, 2) {
+        Write-Host ("!   UPnP prep exited {0}" -f $p.ExitCode) -ForegroundColor Yellow
+    }
+}
+
 $lan = (Get-NetIPAddress -AddressFamily IPv4 |
     Where-Object { $_.IPAddress -match '^192\.168\.' -and $_.InterfaceAlias -notmatch 'WSL|vEthernet' } |
     Select-Object -First 1).IPAddress

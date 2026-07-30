@@ -130,23 +130,33 @@ PY
 }
 
 # Returns 0 if router UPnP mapped signaling TCP (and best-effort TURN).
+# On WSL/--global always runs enable-upnp.sh first (saved elevated task or one UAC).
 rohomieo_try_upnp_global() {
   local lan="${1:-}"
   local ok=0
+
+  if [[ "$PLATFORM" == "wsl" && "${ROHOMIEO_SKIP_UPNP_PREP:-}" != "1" ]]; then
+    echo "==> --global: Windows UPnP prep (Private + discovery + maps)"
+    # Exit 0 = maps/IGD OK; exit 2 = Windows OK but router still off — keep going.
+    set +e
+    bash "$ROOT/scripts/enable-upnp.sh"
+    local upnp_ec=$?
+    set -e
+    if [[ "$upnp_ec" -eq 0 ]]; then
+      ok=1
+    fi
+  fi
+
   # Prefer Windows NATUPnP when available (WSL miniupnpc often can't see the IGD).
-  if [[ "$PLATFORM" == "wsl" ]] && declare -F setup_powershell_windows_bin >/dev/null 2>&1; then
+  if [[ "$ok" != "1" && "$PLATFORM" == "wsl" ]] && declare -F setup_powershell_windows_bin >/dev/null 2>&1; then
     local ps_win bridge_w
     ps_win="$(setup_powershell_windows_bin 2>/dev/null || true)"
     bridge_w="$(wslpath -w "$ROOT/scripts/windows/open-ports-upnp.ps1" 2>/dev/null || true)"
     if [[ -n "${ps_win:-}" && -n "${bridge_w:-}" ]]; then
       if [[ -n "$lan" ]]; then
-        if "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$bridge_w" -LanIp "$lan"; then
-          ok=1
-        fi
+        "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$bridge_w" -LanIp "$lan" && ok=1 || true
       else
-        if "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$bridge_w"; then
-          ok=1
-        fi
+        "$ps_win" -NoProfile -ExecutionPolicy Bypass -File "$bridge_w" && ok=1 || true
       fi
     fi
   fi
@@ -294,12 +304,15 @@ if [[ "$PLATFORM" == "wsl" ]]; then
   export WIN_LAN
 
   if [[ "$MODE" == "global" ]]; then
-    if [[ "$NEED_TUNNELS" != "1" ]]; then
-      if ! rohomieo_try_upnp_global "${WIN_LAN:-}"; then
-        echo "==> router UPnP could not open ports — will use outbound tunnels after signaling is up"
+    # Always run Windows UPnP prep on --global (saved task or one UAC).
+    if ! rohomieo_try_upnp_global "${WIN_LAN:-}"; then
+      echo "==> router UPnP could not open ports — will use outbound tunnels after signaling is up"
+      NEED_TUNNELS=1
+    else
+      echo "==> UPnP OK — using public IP ${ROHOMIEO_PUBLIC_IP:-tunnel-fallback} for invite"
+      # If we have no public IP, still need tunnels even when local IGD mapped oddly.
+      if [[ -z "${ROHOMIEO_PUBLIC_IP:-}" ]]; then
         NEED_TUNNELS=1
-      else
-        echo "==> UPnP OK — using public IP ${ROHOMIEO_PUBLIC_IP} for invite"
       fi
     fi
 
@@ -375,12 +388,13 @@ fi
 PIDS+=($!)
 sleep 1
 if [[ "$MODE" == "global" ]]; then
-  if [[ "$NEED_TUNNELS" != "1" ]]; then
-    if ! rohomieo_try_upnp_global; then
-      echo "==> router UPnP could not open ports — will use outbound tunnels"
+  if ! rohomieo_try_upnp_global; then
+    echo "==> router UPnP could not open ports — will use outbound tunnels"
+    NEED_TUNNELS=1
+  else
+    echo "==> UPnP OK — using public IP ${ROHOMIEO_PUBLIC_IP:-} for invite"
+    if [[ -z "${ROHOMIEO_PUBLIC_IP:-}" ]]; then
       NEED_TUNNELS=1
-    else
-      echo "==> UPnP OK — using public IP ${ROHOMIEO_PUBLIC_IP} for invite"
     fi
   fi
   if ss -ulnp 2>/dev/null | grep -q ':3478'; then
