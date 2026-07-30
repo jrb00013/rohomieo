@@ -249,25 +249,25 @@ trap cleanup EXIT INT TERM
 wait_for_our_turn() {
   local turn_pid="$1"
   local turn_ok=false
-  for _ in $(seq 1 30); do
+  for _ in $(seq 1 40); do
     if ! kill -0 "$turn_pid" 2>/dev/null; then
       wait "$turn_pid" 2>/dev/null || true
       echo "TURN failed to start — see messages above." >&2
       exit 1
     fi
-    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "pid=$turn_pid"; then
-      turn_ok=true
-      break
-    fi
-    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver" \
-      && pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver; then
-      turn_ok=true
-      break
+    # start-turn.sh exec's turnserver (same PID) or keeps it as a child.
+    if ss -ulnp 2>/dev/null | grep ':3478' | grep -q "turnserver"; then
+      if grep -q turnserver "/proc/$turn_pid/comm" 2>/dev/null \
+        || pgrep -P "$turn_pid" -a 2>/dev/null | grep -q turnserver \
+        || ss -ulnp 2>/dev/null | grep ':3478' | grep -q "pid=$turn_pid"; then
+        turn_ok=true
+        break
+      fi
     fi
     sleep 0.5
   done
   if [[ "$turn_ok" != "true" ]]; then
-    echo "TURN did not bind :3478 within 15s." >&2
+    echo "TURN did not bind :3478 within 20s." >&2
     exit 1
   fi
   echo "==> TURN listening on :3478"
@@ -309,6 +309,9 @@ if [[ "$PLATFORM" == "wsl" ]]; then
       exit 1
     fi
 
+    if [[ "$NEED_TUNNELS" == "1" ]]; then
+      export ROHOMIEO_SKIP_UPNP=1
+    fi
     ./scripts/start-turn.sh &
     turn_pid=$!
     PIDS+=("$turn_pid")
@@ -383,6 +386,9 @@ if [[ "$MODE" == "global" ]]; then
   if ss -ulnp 2>/dev/null | grep -q ':3478'; then
     echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
     exit 1
+  fi
+  if [[ "$NEED_TUNNELS" == "1" ]]; then
+    export ROHOMIEO_SKIP_UPNP=1
   fi
   ./scripts/start-turn.sh &
   turn_pid=$!

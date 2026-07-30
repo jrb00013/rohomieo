@@ -13,11 +13,15 @@ source "$ROOT/scripts/lib-upnp.sh"
 _KEEP_MODE="${ROHOMIEO_MODE:-}"
 _KEEP_PUBLIC_IP="${ROHOMIEO_PUBLIC_IP:-}"
 _KEEP_TURN_URL="${ROHOMIEO_TURN_URL:-}"
+_KEEP_TURN_USER="${ROHOMIEO_TURN_USER:-}"
+_KEEP_TURN_PASS="${ROHOMIEO_TURN_PASS:-}"
 # shellcheck disable=SC1090
 [[ -f "$ENV_FILE" ]] && source "$ENV_FILE"
 [[ -n "$_KEEP_MODE" ]] && ROHOMIEO_MODE="$_KEEP_MODE"
 [[ -n "$_KEEP_PUBLIC_IP" ]] && ROHOMIEO_PUBLIC_IP="$_KEEP_PUBLIC_IP"
 [[ -n "$_KEEP_TURN_URL" ]] && ROHOMIEO_TURN_URL="$_KEEP_TURN_URL"
+[[ -n "$_KEEP_TURN_USER" ]] && ROHOMIEO_TURN_USER="$_KEEP_TURN_USER"
+[[ -n "$_KEEP_TURN_PASS" ]] && ROHOMIEO_TURN_PASS="$_KEEP_TURN_PASS"
 
 MODE="${ROHOMIEO_MODE:-global}"
 if [[ "$MODE" != "global" ]]; then
@@ -99,8 +103,12 @@ echo "listening-ip=0.0.0.0" >> "$RUNTIME_CONF"
 _RELAY_IP="$(upnp_local_ip)"
 [[ -n "$_RELAY_IP" ]] && echo "relay-ip=$_RELAY_IP" >> "$RUNTIME_CONF"
 
-upnp_open 3478 udp "turn"
-upnp_open 3478 tcp "turn"
+# Best-effort only — --global falls back to bore tunnels when UPnP is unavailable.
+if [[ "${ROHOMIEO_SKIP_UPNP:-}" != "1" ]]; then
+  upnp_open 3478 udp "turn" || true
+  upnp_open 3478 tcp "turn" || true
+fi
 
 echo "==> starting local TURN relay on :3478 (user=$ROHOMIEO_TURN_USER external-ip=$PUBLIC_IP)"
-turnserver -c "$RUNTIME_CONF"
+# -n keeps coturn in the foreground so run.sh can track the PID (default is daemonize).
+exec turnserver -n -c "$RUNTIME_CONF"

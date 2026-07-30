@@ -18,7 +18,7 @@ KEY="${ROHOMIEO_KEY:-$ROOT/infra/certs/key.pem}"
 
 if [[ "$MODE" == "global" ]]; then
   trap 'upnp_close "$PORT" tcp' EXIT
-  upnp_open "$PORT" tcp "signaling"
+  upnp_open "$PORT" tcp "signaling" || true
 else
   echo "==> local mode — signaling on $BIND (no UPnP)"
 fi
