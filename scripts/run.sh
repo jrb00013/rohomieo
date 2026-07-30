@@ -73,22 +73,24 @@ WS_SCHEME="wss"
 NEED_TUNNELS=0
 
 ensure_turn_creds() {
-  if [[ -n "${ROHOMIEO_TURN_USER:-}" && -n "${ROHOMIEO_TURN_PASS:-}" ]]; then
-    return 0
-  fi
-  ROHOMIEO_TURN_USER="rh$(head -c 4 /dev/urandom | xxd -p)"
-  ROHOMIEO_TURN_PASS="$(head -c 16 /dev/urandom | xxd -p)"
-  {
-    echo "ROHOMIEO_TURN_USER=$ROHOMIEO_TURN_USER"
-    echo "ROHOMIEO_TURN_PASS=$ROHOMIEO_TURN_PASS"
-  } >> .env.rohomieo
+  # Fresh TURN secrets every --global run so old invite URLs stop working.
+  ROHOMIEO_TURN_USER="rh$(head -c 6 /dev/urandom | xxd -p)"
+  ROHOMIEO_TURN_PASS="$(head -c 24 /dev/urandom | xxd -p)"
   export ROHOMIEO_TURN_USER ROHOMIEO_TURN_PASS
-  echo "==> generated TURN credentials, saved to .env.rohomieo"
+  # Do not persist to .env.rohomieo — reused static creds would remain valid forever.
+  echo "==> generated session-scoped TURN credentials (not saved to disk)"
 }
 
 # Fixed session/PIN for this run so we can print the web-UI invite in this terminal.
 export ROHOMIEO_SESSION="${ROHOMIEO_SESSION:-$(python3 -c 'import uuid; print(uuid.uuid4())')}"
-export ROHOMIEO_PIN="${ROHOMIEO_PIN:-$(python3 -c 'import random; print(f"{random.randint(100000,999999)}")')}"
+if [[ -z "${ROHOMIEO_PIN:-}" ]]; then
+  if [[ "$MODE" == "global" ]]; then
+    # 8-digit PIN for internet-facing sessions (still lockout-protected by signaling).
+    export ROHOMIEO_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(10**8):08d}")')"
+  else
+    export ROHOMIEO_PIN="$(python3 -c 'import secrets; print(f"{secrets.randbelow(900000) + 100000}")')"
+  fi
+fi
 
 build_join_url() {
   # Builds https://…/?s=&p=&auto=1… pointing at the real web UI (not file://).
@@ -325,6 +327,11 @@ if [[ "$PLATFORM" == "wsl" ]]; then
     [[ -n "${ROHOMIEO_TURN_PASS:-}" ]] && ps_args+=(-TurnPass "$ROHOMIEO_TURN_PASS")
     [[ -n "${ROHOMIEO_SESSION:-}" ]] && ps_args+=(-Session "$ROHOMIEO_SESSION")
     [[ -n "${ROHOMIEO_PIN:-}" ]] && ps_args+=(-Pin "$ROHOMIEO_PIN")
+    if [[ -n "${ROHOMIEO_ADMIN_TOKEN:-}" ]]; then
+      ps_args+=(-AdminToken "$ROHOMIEO_ADMIN_TOKEN")
+    elif [[ "$MODE" == "local" || "${ROHOMIEO_EXPOSE_ADMIN_API:-}" == "1" ]]; then
+      ps_args+=(-ExposeAdminApi)
+    fi
     "$ps_win" "${ps_args[@]}" &
     PIDS+=($!)
     sleep 5

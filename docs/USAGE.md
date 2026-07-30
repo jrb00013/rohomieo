@@ -30,7 +30,7 @@ Session: <uuid>
 PIN:     123456
 ```
 
-With `--global`, Rohomieo tries UPnP first. If the router won’t open ports, it automatically starts outbound tunnels (**cloudflared** for the web UI / signaling, **bore** for TCP TURN) — no manual port-forwards. The join link opens the **Rohomieo web UI** with session/PIN/TURN embedded; `run.sh` prints that URL + a terminal QR.
+With `--global`, Rohomieo tries UPnP first. If the router won’t open ports, it automatically starts outbound tunnels (**cloudflared** + **bore**) — no manual port-forwards. The join link opens the **Rohomieo web UI** with session/PIN/TURN embedded; treat that URL like a password. `run.sh` prints the URL + a terminal QR. Admin endpoints (`/api/audit`, `/metrics`) stay off in `--global`; use `--local` or `--expose-admin-api` / `--admin-token` on trusted networks.
 
 ## 3. Connect from browser
 

@@ -43,4 +43,10 @@ fi
 
 ARGS=(--bind "$BIND" --web-root "$WEB_ROOT")
 [[ -f "$CERT" && -f "$KEY" ]] && ARGS+=(--cert "$CERT" --key "$KEY")
+# Admin telemetry is off by default (safe for --global / public tunnels).
+if [[ -n "${ROHOMIEO_ADMIN_TOKEN:-}" ]]; then
+  ARGS+=(--admin-token "$ROHOMIEO_ADMIN_TOKEN")
+elif [[ "$MODE" == "local" || "${ROHOMIEO_EXPOSE_ADMIN_API:-}" == "1" ]]; then
+  ARGS+=(--expose-admin-api)
+fi
 exec "$BIN" "${ARGS[@]}"

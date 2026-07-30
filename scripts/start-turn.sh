@@ -61,18 +61,19 @@ if command -v systemctl >/dev/null 2>&1; then
 fi
 
 if [[ -z "${ROHOMIEO_TURN_USER:-}" || -z "${ROHOMIEO_TURN_PASS:-}" ]]; then
-  ROHOMIEO_TURN_USER="rh$(head -c 4 /dev/urandom | xxd -p)"
-  ROHOMIEO_TURN_PASS="$(head -c 16 /dev/urandom | xxd -p)"
-  {
-    echo "ROHOMIEO_TURN_USER=$ROHOMIEO_TURN_USER"
-    echo "ROHOMIEO_TURN_PASS=$ROHOMIEO_TURN_PASS"
-  } >> "$ENV_FILE"
-  echo "==> generated TURN credentials, saved to $ENV_FILE"
+  ROHOMIEO_TURN_USER="rh$(head -c 6 /dev/urandom | xxd -p)"
+  ROHOMIEO_TURN_PASS="$(head -c 24 /dev/urandom | xxd -p)"
+  export ROHOMIEO_TURN_USER ROHOMIEO_TURN_PASS
+  echo "==> generated session-scoped TURN credentials (not saved to disk)"
 fi
 
 PUBLIC_IP="${ROHOMIEO_PUBLIC_IP:-$(curl -fsS --max-time 3 ifconfig.me || true)}"
+# Tunnel mode may have no routable public IP; coturn still needs external-ip for candidates.
 if [[ -z "$PUBLIC_IP" ]]; then
-  echo "TURN needs a public IP — set ROHOMIEO_PUBLIC_IP or fix outbound HTTPS to ifconfig.me" >&2
+  PUBLIC_IP="$(upnp_local_ip)"
+fi
+if [[ -z "$PUBLIC_IP" ]]; then
+  echo "TURN needs ROHOMIEO_PUBLIC_IP or a detectable LAN IP" >&2
   exit 1
 fi
 ROHOMIEO_TURN_URL="${ROHOMIEO_TURN_URL:-turn:$PUBLIC_IP:3478}"

@@ -18,6 +18,8 @@ echo "  Phone invite (opens the Rohomieo web UI)"
 echo "════════════════════════════════════════════════════════"
 echo "  $JOIN"
 echo "════════════════════════════════════════════════════════"
+echo "  Treat this link like a password (session + PIN + TURN)."
+echo "════════════════════════════════════════════════════════"
 
 printed=false
 if command -v qrencode >/dev/null 2>&1; then

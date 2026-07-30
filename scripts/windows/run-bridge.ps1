@@ -10,7 +10,9 @@ param(
     [string]$TurnUser = "",
     [string]$TurnPass = "",
     [string]$Session = "",
-    [string]$Pin = ""
+    [string]$Pin = "",
+    [switch]$ExposeAdminApi,
+    [string]$AdminToken = ""
 )
 
 $ErrorActionPreference = "Stop"
@@ -81,6 +83,11 @@ $sigArgs = @(
     "--cert", (Join-Path $Run "certs\cert.pem"),
     "--key", (Join-Path $Run "certs\key.pem")
 )
+if ($AdminToken) {
+    $sigArgs += @("--admin-token", $AdminToken)
+} elseif ($ExposeAdminApi) {
+    $sigArgs += @("--expose-admin-api")
+}
 
 Write-Host "Starting signaling..." -ForegroundColor Cyan
 $sig = Start-Process -FilePath (Join-Path $Run "rohomieo-signaling.exe") `
