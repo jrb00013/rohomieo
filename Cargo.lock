@@ -2058,9 +2058,9 @@ dependencies = [
 
 [[package]]
 name = "rand"
-version = "0.8.6"
+version = "0.8.7"
 source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5ca0ecfa931c29007047d1bc58e623ab12e5590e8c7cc53200d5202b69266d8a"
+checksum = "22f6172bdec972074665ed81ed53b71da00bfc44b65a753cfde883ec4c702a1a"
 dependencies = [
  "libc",
  "rand_chacha 0.3.1",
@@ -2245,7 +2245,7 @@ dependencies = [
  "jpeg-encoder",
  "openh264",
  "qrcode",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rohomieo-proto",
  "rustls",
  "scrap",
@@ -2281,7 +2281,7 @@ dependencies = [
  "clap",
  "dashmap",
  "futures-util",
- "rand 0.8.6",
+ "rand 0.9.4",
  "rohomieo-proto",
  "rustls",
  "rustls-pemfile",
@@ -3090,7 +3090,7 @@ dependencies = [
  "http",
  "httparse",
  "log",
- "rand 0.8.6",
+ "rand 0.8.7",
  "rustls",
  "rustls-pki-types",
  "sha1",
