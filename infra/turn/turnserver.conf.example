@@ -1,0 +1,15 @@
+# coturn config for a self-hosted TURN relay (rohomieo).
+# scripts/start-turn.sh fills in ROHOMIEO_TURN_* from .env.rohomieo.
+
+listening-port=3478
+fingerprint
+lt-cred-mech
+realm=rohomieo
+user=ROHOMIEO_TURN_USER:ROHOMIEO_TURN_PASS
+
+# Only relay UDP/TCP media — no verbose logging of desktop contents.
+# coturn 4.6+ (Ubuntu 24.04): loopback peers are denied by default.
+no-tlsv1
+no-tlsv1_1
+no-cli
+no-multicast-peers

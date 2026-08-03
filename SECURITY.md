@@ -22,25 +22,37 @@ We aim to acknowledge within 72 hours.
 
 ## Threat model (v0.2)
 
-Rohomieo is designed for **trusted networks** (home LAN or WireGuard VPN):
+Rohomieo is designed primarily for **trusted networks** (home LAN or WireGuard VPN).  
+`./scripts/run.sh --global` intentionally exposes a **short-lived session** to the public internet (UPnP and/or outbound tunnels). Treat that mode as higher risk.
 
 | Control | Status |
 |---------|--------|
-| Media encryption | WebRTC SRTP (peer-to-peer) |
-| Signaling | TLS recommended; optional HTTP on VPN only |
-| Authentication | 6-digit PIN per session (v0.2); device keys planned v0.3 |
-| Audit | Connection events logged server-side |
-| Rate limiting | PIN failures throttled per session |
+| Media encryption | WebRTC SRTP (peer-to-peer or via TURN) |
+| Signaling | TLS recommended; HTTPS/WSS via certs or Cloudflare tunnel |
+| Authentication | Per-session PIN (8 digits in `--global`, 6 in `--local`); lockout after failed attempts |
+| TURN credentials | Fresh per `--global` run (not reused from `.env`); embedded in the invite URL as a bearer secret |
+| Admin telemetry | `/api/audit` and `/metrics` **off by default**; enable with `--expose-admin-api` (LAN) or `--admin-token` |
+| Tunnel binaries | cloudflared / bore downloaded version-pinned with SHA-256 verification |
+| Audit | Connection events logged server-side (export only when admin API enabled) |
 
-**Not in scope for v0.2:** protection against a malicious signaling server operator (use your own server), or exposure to the public internet without VPN.
+**Trust boundaries for `--global`:**
+
+- Anyone with the **join URL** (session + PIN + TURN secrets) can attempt to join as viewer.
+- **UPnP** opens WAN ports to your PC while the session runs.
+- **Quick tunnels** (trycloudflare.com / bore.pub) terminate TLS at a third party — operators can see signaling metadata; media remains SRTP end-to-end when peers connect.
+- Stopping the session (Ctrl+C) tears down tunnels / best-effort UPnP cleanup; restart to rotate secrets.
+
+**Not in scope for v0.2:** protection against a malicious signaling server you do not control, or device-bound viewer identity (planned: Ed25519 pairing).
 
 ## Best practices
 
-1. Run signaling bound to WireGuard IP or LAN — not `0.0.0.0` on untrusted networks without firewall.
-2. Use TLS (`--cert` / `--key`) when browsers connect over HTTPS.
-3. Rotate PINs by restarting the host session.
-4. Review `/api/audit` for unexpected viewer joins.
-5. Keep WireGuard keys private; use separate phone/laptop keys.
+1. Prefer `--local` or WireGuard when possible; use `--global` only while you need off-LAN access.
+2. Treat the printed join URL / QR as a **password** — do not post it in public chats or screenshots.
+3. Use TLS (`--cert` / `--key`) or the Cloudflare tunnel HTTPS front; accept cert warnings only for your own LAN IP.
+4. Keep `/api/audit` and `/metrics` disabled on public sessions; for LAN ops use `--expose-admin-api` or a Bearer admin token.
+5. Rotate access by stopping and restarting the host session (new PIN + TURN creds each `--global` run).
+6. Keep WireGuard keys private; use separate phone/laptop keys.
+7. Do not commit `.env.rohomieo*` files (gitignored).
 
 ## Planned improvements
 

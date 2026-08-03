@@ -16,6 +16,8 @@ See also [ROADMAP.md](ROADMAP.md) for planned features.
 
 | Platform | Command |
 |----------|---------|
+| **Internet** | `./scripts/run.sh --global` (UPnP, or auto tunnels if UPnP fails) |
+| **LAN** | `./scripts/run.sh --local` |
 | Windows | `powershell -File scripts\start-windows-host.ps1` |
 | WSL | `./scripts/start-wsl.sh` + Windows host script above |
 | Linux | `./scripts/start-linux.sh` |
@@ -27,6 +29,9 @@ Host prints:
 Session: <uuid>
 PIN:     123456
 ```
+
+With `--global`, Rohomieo tries UPnP first. On WSL/Windows it can elevate once (`./scripts/enable-upnp.sh`) to set the Wi‑Fi profile to **Private**, enable Network Discovery, and map ports. To flip UPnP **on the gateway itself** without clicking the UI, use credentialed admin form replay: `./scripts/enable-gateway-upnp.sh` (Copy-as-cURL into `~/.config/rohomieo/gateway.env`). If the ISP gateway still blocks UPnP, outbound tunnels (**cloudflared** + **bore**) stay the automatic fallback. Treat the join URL like a password. Admin endpoints (`/api/audit`, `/metrics`) stay off in `--global`.
+
 
 ## 3. Connect from browser
 

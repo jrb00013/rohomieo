@@ -31,8 +31,13 @@ export class RohomieoViewer {
   private sessionRetryTimer: number | null = null;
   private sessionRetries = 0;
   private pendingRegister: { sid: string; pin: string } | null = null;
+  private turn: { url: string; user: string; pass: string } | null = null;
 
   constructor(private cb: ViewerCallbacks) {}
+
+  setTurn(turn: { url: string; user: string; pass: string } | null) {
+    this.turn = turn;
+  }
 
   connect(signalingUrl: string, sessionId: string, pin: string) {
     this.cleanup();
@@ -146,9 +151,27 @@ export class RohomieoViewer {
 
   private async ensurePeer(): Promise<RTCPeerConnection> {
     if (this.pc) return this.pc;
-    const pc = new RTCPeerConnection({
-      iceServers: [],
-    });
+    const iceServers: RTCIceServer[] = [
+      {
+        urls: ["stun:stun.l.google.com:19302", "stun:stun1.l.google.com:19302"],
+      },
+    ];
+    if (this.turn) {
+      const urls = [this.turn.url];
+      if (!/transport=tcp/i.test(this.turn.url)) {
+        urls.push(
+          this.turn.url.includes("?")
+            ? `${this.turn.url}&transport=tcp`
+            : `${this.turn.url}?transport=tcp`
+        );
+      }
+      iceServers.push({
+        urls,
+        username: this.turn.user,
+        credential: this.turn.pass,
+      });
+    }
+    const pc = new RTCPeerConnection({ iceServers });
     this.pc = pc;
 
     pc.ontrack = (ev) => {

@@ -1,7 +1,13 @@
 //! HTTP API handlers for status and audit export.
 
 use crate::AppState;
-use axum::{extract::State, response::IntoResponse, Json};
+use axum::{
+    extract::State,
+    http::{header, Request, StatusCode},
+    middleware::Next,
+    response::{IntoResponse, Response},
+    Json,
+};
 use serde::Serialize;
 
 #[derive(Serialize)]
@@ -35,4 +41,26 @@ pub async fn metrics_handler(State(state): State<AppState>) -> impl IntoResponse
         )],
         state.store.metrics().render_prometheus(),
     )
+}
+
+/// Gate `/api/audit` and `/metrics` when an admin token is configured.
+pub async fn require_admin_token(
+    State(state): State<AppState>,
+    req: Request<axum::body::Body>,
+    next: Next,
+) -> Result<Response, StatusCode> {
+    let Some(expected) = state.admin_token.as_deref() else {
+        return Ok(next.run(req).await);
+    };
+    let authorized = req
+        .headers()
+        .get(header::AUTHORIZATION)
+        .and_then(|v| v.to_str().ok())
+        .and_then(|v| v.strip_prefix("Bearer "))
+        .is_some_and(|got| got == expected);
+    if authorized {
+        Ok(next.run(req).await)
+    } else {
+        Err(StatusCode::UNAUTHORIZED)
+    }
 }

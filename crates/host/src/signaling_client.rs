@@ -156,13 +156,13 @@ async fn connect_signaling(
     tokio_tungstenite::WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>,
     tokio_tungstenite::tungstenite::handshake::client::Response,
 )> {
-    if url.scheme() == "wss" && url.host_str().is_some_and(is_loopback_host) {
+    if url.scheme() == "wss" && url.host_str().is_some_and(accepts_dev_self_signed) {
         let _ = rustls::crypto::ring::default_provider().install_default();
         let cfg = loopback_tls_config();
         let connector = Connector::Rustls(Arc::new(cfg));
         connect_async_tls_with_config(url.as_str(), None, false, Some(connector))
             .await
-            .context("websocket connect (wss to localhost — accepts dev self-signed cert)")
+            .context("websocket connect (wss — accepts self-signed cert on loopback/LAN)")
     } else {
         connect_async(url.as_str())
             .await
@@ -172,6 +172,19 @@ async fn connect_signaling(
 
 fn is_loopback_host(host: &str) -> bool {
     matches!(host, "localhost" | "127.0.0.1" | "::1")
+}
+
+/// Dev self-signed certs are used on loopback and private LAN (WSL mirrored
+/// networking forces the Windows host to dial the LAN IP instead of 127.0.0.1).
+fn accepts_dev_self_signed(host: &str) -> bool {
+    if is_loopback_host(host) {
+        return true;
+    }
+    match host.parse::<std::net::IpAddr>() {
+        Ok(std::net::IpAddr::V4(v4)) => v4.is_private() || v4.is_loopback() || v4.is_link_local(),
+        Ok(std::net::IpAddr::V6(v6)) => v6.is_loopback() || (v6.segments()[0] & 0xfe00) == 0xfc00,
+        Err(_) => false,
+    }
 }
 
 fn loopback_tls_config() -> rustls::ClientConfig {
