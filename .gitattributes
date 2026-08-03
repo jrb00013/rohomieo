@@ -1,2 +1,14 @@
+# Line endings
 *.sh text eol=lf
 *.conf.example text eol=lf
+
+# GitHub language bar: this is a Rust project.
+# Setup/dev scripts inflate Shell + PowerShell past Rust by byte count.
+*.sh linguist-detectable=false
+*.ps1 linguist-detectable=false
+*.cmd linguist-detectable=false
+*.bat linguist-detectable=false
+
+# Keep Rust counted; exclude lockfile noise if ever reclassified
+*.rs linguist-language=Rust
+Cargo.lock linguist-generated=true
