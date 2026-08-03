@@ -24,6 +24,6 @@ rustls = { version = "0.23", features = ["ring"] }
 rustls-pemfile = "2"
 tower-http = { version = "0.7", features = ["fs", "cors", "trace"] }
 dashmap = "6"
-rand = "0.8"
+rand = "0.9"
 clap = { version = "4", features = ["derive", "env"] }
 chrono = { workspace = true }
