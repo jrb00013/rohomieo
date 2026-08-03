@@ -22,6 +22,7 @@ RUN_SETUP=false
 RUN_START=false
 RUN_STOP=false
 RUN_FOREGROUND=false
+RUN_GLOBAL=false
 TARGET="auto"
 
 usage() {
@@ -34,6 +35,7 @@ Rohomieo setup
   ./setup.sh --macos         Install for macOS
 
   ./setup.sh --start         Start WireGuard bridge + services (no install)
+  ./setup.sh --start --global  Same as ./scripts/run.sh --global (internet)
   ./setup.sh --wsl --start   Install then start
   ./setup.sh --stop          Stop signaling/host + bring down wg0
 
@@ -61,6 +63,7 @@ while [[ $# -gt 0 ]]; do
     -h|--help|help) usage; exit 0 ;;
     --start)        RUN_START=true; shift ;;
     --stop)         RUN_STOP=true; shift ;;
+    --global)       RUN_GLOBAL=true; RUN_START=true; shift ;;
     --foreground|-f) RUN_FOREGROUND=true; shift ;;
     --linux|-l|linux) TARGET=linux; RUN_SETUP=true; shift ;;
     --wsl|-w|wsl)     TARGET=wsl; RUN_SETUP=true; shift ;;
@@ -131,6 +134,9 @@ EOF
 fi
 
 if [[ "$RUN_START" == "true" ]]; then
+  if [[ "$RUN_GLOBAL" == "true" ]]; then
+    exec "$ROOT/scripts/run.sh" --global
+  fi
   resolve_target
   fg="false"
   [[ "$RUN_FOREGROUND" == "true" ]] && fg="true"

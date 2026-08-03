@@ -5,10 +5,11 @@ mod session;
 mod ws;
 
 use anyhow::Context;
-use api::{api_audit, api_status, metrics_handler};
+use api::{api_audit, api_status, metrics_handler, require_admin_token};
 use audit::AuditLog;
 use axum::{
     extract::{ws::WebSocketUpgrade, State},
+    middleware,
     response::IntoResponse,
     routing::get,
     Router,
@@ -27,9 +28,11 @@ use tower_http::{
 use tracing::info;
 
 #[derive(Clone)]
-struct AppState {
+pub struct AppState {
     store: Arc<SessionStore>,
     audit: Arc<AuditLog>,
+    /// When set, `/api/audit` and `/metrics` require `Authorization: Bearer …`.
+    admin_token: Option<String>,
 }
 
 #[derive(Parser, Debug)]
@@ -62,6 +65,15 @@ struct Args {
     /// Lock session after this many failed PIN attempts
     #[arg(long, default_value = "5", env = "ROHOMIEO_MAX_PIN_FAILURES")]
     max_pin_failures: u32,
+
+    /// Expose `/api/audit` and `/metrics` without a token (LAN/VPN only).
+    /// Off by default so `--global` / public tunnels do not leak session telemetry.
+    #[arg(long, env = "ROHOMIEO_EXPOSE_ADMIN_API", default_value_t = false)]
+    expose_admin_api: bool,
+
+    /// If set, admin routes are enabled and require `Authorization: Bearer <token>`.
+    #[arg(long, env = "ROHOMIEO_ADMIN_TOKEN")]
+    admin_token: Option<String>,
 }
 
 #[tokio::main]
@@ -85,9 +97,13 @@ async fn main() -> anyhow::Result<()> {
         args.session_ttl_secs,
     ));
 
+    let admin_token = args.admin_token.filter(|t| !t.is_empty());
+    let expose_admin = args.expose_admin_api || admin_token.is_some();
+
     let state = AppState {
         store: Arc::clone(&store),
         audit: Arc::clone(&audit),
+        admin_token: admin_token.clone(),
     };
 
     spawn_ttl_sweeper(Arc::clone(&store));
@@ -99,12 +115,30 @@ async fn main() -> anyhow::Result<()> {
     let index = web_root.join("index.html");
     let serve_dir = ServeDir::new(&web_root).not_found_service(ServeFile::new(index));
 
-    let app = Router::new()
+    let mut app = Router::new()
         .route("/ws", get(ws_handler))
         .route("/health", get(health_legacy))
-        .route("/api/status", get(api_status))
-        .route("/api/audit", get(api_audit))
-        .route("/metrics", get(metrics_handler))
+        .route("/api/status", get(api_status));
+
+    if expose_admin {
+        let admin = Router::new()
+            .route("/api/audit", get(api_audit))
+            .route("/metrics", get(metrics_handler))
+            .route_layer(middleware::from_fn_with_state(
+                state.clone(),
+                require_admin_token,
+            ));
+        app = app.merge(admin);
+        if admin_token.is_some() {
+            info!("Admin API: /api/audit /metrics (Bearer token required)");
+        } else {
+            info!("Admin API: /api/audit /metrics (open — LAN/VPN only)");
+        }
+    } else {
+        info!("Admin API: disabled (set --expose-admin-api or --admin-token)");
+    }
+
+    let app = app
         .fallback_service(serve_dir)
         .layer(
             CorsLayer::new()
@@ -121,7 +155,7 @@ async fn main() -> anyhow::Result<()> {
         args.bind
     );
     info!("Web root: {}", web_root.display());
-    info!("Endpoints: /ws /health /api/status /api/audit /metrics");
+    info!("Endpoints: /ws /health /api/status");
 
     match (args.cert, args.key) {
         (Some(cert_path), Some(key_path)) => {

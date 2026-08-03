@@ -6,7 +6,9 @@ infra/wireguard/keys/
 var/
 .tools/
 .env.rohomieo
-.env.rohomieo.windows
+.env.rohomieo.*
+!.env.rohomieo.example
+var/gateway.env
 .local/
 SETUP_STATUS.txt
 web/tsconfig.tsbuildinfo

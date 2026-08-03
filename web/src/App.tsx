@@ -17,6 +17,7 @@ type Invite = {
   pin?: string;
   auto: boolean;
   signalingUrl?: string;
+  turn?: { url: string; user: string; pass: string } | null;
 };
 
 /** Survives React StrictMode remount (which would otherwise clear ?s=&p= then re-read empty). */
@@ -42,12 +43,20 @@ function readInviteFromUrl(): Invite {
     q.get("connect") === "1" ||
     (!!sessionId && !!pin && q.get("auto") !== "0");
   const ws = q.get("ws") ?? q.get("signaling") ?? undefined;
+  const turnUrl = q.get("turn");
+  const turnUser = q.get("turnu");
+  const turnPass = q.get("turnp");
+  const turn =
+    turnUrl && turnUser && turnPass
+      ? { url: turnUrl, user: turnUser, pass: turnPass }
+      : null;
 
   cachedInvite = {
     sessionId: sessionId?.trim() || undefined,
     pin: pin?.trim() || undefined,
     auto,
     signalingUrl: ws ?? undefined,
+    turn,
   };
 
   if (cachedInvite.sessionId || cachedInvite.pin) {
@@ -311,9 +320,10 @@ export default function App() {
       },
       onTextFocus: applyHostTextFocus,
     });
+    if (invite.turn) viewer.setTurn(invite.turn);
     viewerRef.current = viewer;
     viewer.connect(signalingUrl, sessionId.trim(), pin.trim());
-  }, [signalingUrl, sessionId, pin, remember, applyHostTextFocus]);
+  }, [signalingUrl, sessionId, pin, remember, applyHostTextFocus, invite.turn]);
 
   useEffect(() => {
     if (!invite.auto) return;

@@ -12,5 +12,14 @@ curl -fsS "$BASE/api/status" | python3 -m json.tool
 echo
 
 echo "==> GET $BASE/metrics (first 5 lines)"
-curl -fsS "$BASE/metrics" | head -5
+code="$(curl -sS -o /tmp/rohomieo-metrics.txt -w "%{http_code}" "$BASE/metrics" || true)"
+if [[ "$code" == "200" ]]; then
+  head -5 /tmp/rohomieo-metrics.txt
+elif [[ "$code" == "401" ]]; then
+  echo "(admin API requires Authorization: Bearer \$ROHOMIEO_ADMIN_TOKEN)"
+elif [[ "$code" == "404" ]]; then
+  echo "(admin API disabled — pass --expose-admin-api or --admin-token to enable)"
+else
+  echo "(unexpected HTTP $code)"
+fi
 echo "ok"
