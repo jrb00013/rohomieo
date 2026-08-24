@@ -22,7 +22,7 @@ clap = { version = "4", features = ["derive", "env"] }
 rand = "0.9"
 scrap = "0.5"
 enigo = "0.6"
-webrtc = "0.17"
+webrtc = "0.20"
 interceptor = "0.17"
 tokio-tungstenite = { version = "0.24", default-features = false, features = ["connect", "rustls-tls-webpki-roots"] }
 rustls = { version = "0.23", default-features = false, features = ["ring", "std", "tls12"] }
