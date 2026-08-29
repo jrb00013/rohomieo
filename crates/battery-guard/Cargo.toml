@@ -1,0 +1,20 @@
+[package]
+name = "rohomieo-battery-guard"
+version.workspace = true
+edition.workspace = true
+description = "Adaptive battery charge-limit CLI for always-on rohomieo hosts"
+
+[[bin]]
+name = "rohomieo-battery-guard"
+path = "src/main.rs"
+
+[dependencies]
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+clap = { version = "4", features = ["derive", "env"] }
+wmi = "0.13"
+serde = { workspace = true }
+
+[dev-dependencies]

@@ -1,6 +1,6 @@
 [workspace]
 resolver = "2"
-members = ["crates/proto", "crates/signaling", "crates/host"]
+members = ["crates/proto", "crates/signaling", "crates/host", "crates/battery-guard"]
 default-members = ["crates/signaling", "crates/host"]
 
 [workspace.package]
