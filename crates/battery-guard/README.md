@@ -123,3 +123,20 @@ actual electrical source instead of lying to software about it. Not
 implemented in this crate as of this writing — would be a new sibling
 module (e.g. `rohomieo-power-cycle`) that calls a plug's local/cloud API
 on the same threshold logic `battery-guard --status` already exposes.
+
+**Hardware picks, if pursuing this:** favor a plug with a *documented
+local-network API* — no cloud dependency, no external outage taking your
+automation down with it.
+
+- TP-Link Kasa KP125M or EP25 — local TCP API (port 9999), well
+  documented by the `python-kasa` community project; KP125M adds energy
+  monitoring.
+- TP-Link Tapo P110 — same family, newer KLAP protocol, also supported by
+  `python-kasa`, energy monitoring built in.
+- Shelly Plug S — genuinely open local HTTP/MQTT API from the factory
+  (not reverse-engineered), higher build quality, best pick if you want
+  Home Assistant integration beyond just this one automation.
+
+Avoid Wyze and the stock Amazon Smart Plug for this use case — both are
+effectively cloud-only, which would make the automation depend on a
+third-party service staying up.
