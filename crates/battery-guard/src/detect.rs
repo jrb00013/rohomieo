@@ -38,32 +38,32 @@ mod tests {
     fn detects_asus() {
         let t = MockWmiTransport {
             manufacturer: "ASUSTeK COMPUTER INC.".into(),
-            model: "ROG Strix G18".into(),
+            ..Default::default()
         };
         assert_eq!(detect_vendor(&t), Vendor::Asus);
     }
 
     #[test]
     fn detects_lenovo() {
-        let t = MockWmiTransport { manufacturer: "LENOVO".into(), model: "ThinkPad X1".into() };
+        let t = MockWmiTransport { manufacturer: "LENOVO".into(), ..Default::default() };
         assert_eq!(detect_vendor(&t), Vendor::Lenovo);
     }
 
     #[test]
     fn detects_dell() {
-        let t = MockWmiTransport { manufacturer: "Dell Inc.".into(), model: "XPS 15".into() };
+        let t = MockWmiTransport { manufacturer: "Dell Inc.".into(), ..Default::default() };
         assert_eq!(detect_vendor(&t), Vendor::Dell);
     }
 
     #[test]
     fn detects_hp() {
-        let t = MockWmiTransport { manufacturer: "HP".into(), model: "EliteBook".into() };
+        let t = MockWmiTransport { manufacturer: "HP".into(), ..Default::default() };
         assert_eq!(detect_vendor(&t), Vendor::Hp);
     }
 
     #[test]
     fn unknown_vendor_falls_through() {
-        let t = MockWmiTransport { manufacturer: "Framework".into(), model: "Laptop 13".into() };
+        let t = MockWmiTransport { manufacturer: "Framework".into(), ..Default::default() };
         assert_eq!(detect_vendor(&t), Vendor::Unknown("Framework".into()));
     }
 }

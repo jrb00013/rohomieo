@@ -101,21 +101,39 @@ impl WmiTransport for RealWmiTransport {
 }
 
 #[cfg(test)]
+use std::cell::RefCell;
+
+#[cfg(test)]
 pub struct MockWmiTransport {
     pub manufacturer: String,
     pub model: String,
+    pub calls: RefCell<Vec<(String, String, String)>>, // (namespace, class, method)
+    pub call_result: Option<WmiValue>,
+}
+
+#[cfg(test)]
+impl Default for MockWmiTransport {
+    fn default() -> Self {
+        Self {
+            manufacturer: String::new(),
+            model: String::new(),
+            calls: RefCell::new(vec![]),
+            call_result: None,
+        }
+    }
 }
 
 #[cfg(test)]
 impl WmiTransport for MockWmiTransport {
     fn call_method(
         &self,
-        _namespace: &str,
-        _class: &str,
-        _method: &str,
+        namespace: &str,
+        class: &str,
+        method: &str,
         _args: &[(&str, WmiArg)],
     ) -> Result<WmiValue> {
-        Ok(WmiValue::Unit)
+        self.calls.borrow_mut().push((namespace.to_string(), class.to_string(), method.to_string()));
+        Ok(self.call_result.clone().unwrap_or(WmiValue::Unit))
     }
 
     fn query_manufacturer_model(&self) -> Result<(String, String)> {
@@ -131,7 +149,7 @@ mod tests {
     fn mock_transport_returns_configured_manufacturer() {
         let t = MockWmiTransport {
             manufacturer: "ASUSTeK COMPUTER INC.".into(),
-            model: "ROG Strix G18".into(),
+            ..Default::default()
         };
         let (m, _) = t.query_manufacturer_model().unwrap();
         assert_eq!(m, "ASUSTeK COMPUTER INC.");
