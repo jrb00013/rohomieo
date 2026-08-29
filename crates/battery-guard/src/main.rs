@@ -79,10 +79,24 @@ mod tests {
 
     #[test]
     fn asus_auto_applies_on_default_run() {
+        // ASUS's real path is file I/O + a service restart, not WMI (see
+        // vendor::asus for why) — point it at a temp file and skip the
+        // service restart so this stays a hermetic unit test.
+        let tmp = std::env::temp_dir().join("rohomieo-battery-guard-test.ini");
+        std::fs::write(&tmp, "[BatteryHealthCharging]\r\nversion=3\r\nvalue=80\r\n").unwrap();
+        std::env::set_var("ROHOMIEO_BATTERY_GUARD_ASUS_INI", &tmp);
+        std::env::set_var("ROHOMIEO_BATTERY_GUARD_SKIP_SERVICE_RESTART", "1");
+
         let t = MockWmiTransport { manufacturer: "ASUSTeK COMPUTER INC.".into(), ..Default::default() };
         let args = Args { limit: 60, status: false, detect: false };
         run(args, &t).unwrap();
-        assert_eq!(t.calls.borrow().len(), 1);
+        let updated = std::fs::read_to_string(&tmp).unwrap();
+        assert!(updated.contains("value=60"));
+
+        std::env::remove_var("ROHOMIEO_BATTERY_GUARD_ASUS_INI");
+        std::env::remove_var("ROHOMIEO_BATTERY_GUARD_SKIP_SERVICE_RESTART");
+        let _ = std::fs::remove_file(&tmp);
+        let _ = std::fs::remove_file(format!("{}.rohomieo-backup", tmp.display()));
     }
 
     #[test]

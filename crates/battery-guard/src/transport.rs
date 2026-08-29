@@ -60,7 +60,8 @@ impl WmiTransport for RealWmiTransport {
     ) -> anyhow::Result<WmiValue> {
         use windows::core::{BSTR, HSTRING, VARIANT};
         use windows::Win32::System::Wmi::{
-            IWbemClassObject, IWbemContext, WBEM_FLAG_RETURN_IMMEDIATELY, WBEM_FLAG_RETURN_WBEM_COMPLETE,
+            IWbemCallResult, IWbemClassObject, IWbemContext, WBEM_FLAG_RETURN_IMMEDIATELY,
+            WBEM_FLAG_RETURN_WBEM_COMPLETE,
         };
 
         tracing::debug!(class, method, ?args, "calling WMI method");
@@ -120,31 +121,37 @@ impl WmiTransport for RealWmiTransport {
             None => None,
         };
 
+        // This provider rejects ExecMethod outright (WBEM_E_INVALID_PARAMETER)
+        // when lFlags is WBEM_FLAG_RETURN_WBEM_COMPLETE (0) — the value MSDN
+        // documents as correct for a fully synchronous call that populates
+        // ppOutParams directly. It only accepts WBEM_FLAG_RETURN_IMMEDIATELY,
+        // but under that flag the *documented* semantics are semisynchronous:
+        // ppOutParams stays null and the real result comes back through
+        // ppCallResult, retrieved via IWbemCallResult::GetResultObject.
         let mut out_params: Option<IWbemClassObject> = None;
+        let mut call_result: Option<IWbemCallResult> = None;
         unsafe {
             self.conn
                 .svc
                 .ExecMethod(
                     &class_bstr,
                     &BSTR::from(method),
-                    // NOTE: WBEM_FLAG_RETURN_WBEM_COMPLETE (0) — the flag
-                    // MSDN documents as correct for a synchronous call —
-                    // makes this provider reject the call outright with
-                    // WBEM_E_INVALID_PARAMETER on the ROG Strix G18.
-                    // WBEM_FLAG_RETURN_IMMEDIATELY lets the call succeed,
-                    // but out_params then comes back None rather than
-                    // populated. Both symptoms point at this vendor's ATK
-                    // WMI provider behaving non-standardly around method
-                    // completion signaling; needs a live hardware session
-                    // to iterate further (try WBEM_FLAG_DIRECT_READ, or a
-                    // provider-specific IWbemContext value).
                     WBEM_FLAG_RETURN_IMMEDIATELY,
                     None::<&IWbemContext>,
                     in_params.as_ref(),
                     Some(&mut out_params),
-                    None,
+                    Some(&mut call_result),
                 )
                 .with_context(|| format!("ExecMethod({class}::{method}) failed"))?;
+        }
+        if out_params.is_none() {
+            if let Some(result) = call_result {
+                out_params = Some(unsafe {
+                    result
+                        .GetResultObject(5000)
+                        .with_context(|| format!("GetResultObject({class}::{method}) failed"))?
+                });
+            }
         }
 
         if let Some(out) = out_params {

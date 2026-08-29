@@ -16,7 +16,7 @@ Debug logs: `RUST_LOG=rohomieo_battery_guard=debug rohomieo-battery-guard`
 
 | Vendor | Auto-applies | Notes |
 |--------|---------------|-------|
-| ASUS   | Yes | Verified on ROG Strix G18 via ATK WMI interface |
+| ASUS   | Yes | Verified on ROG Strix G18 — see mechanism below |
 | Lenovo | No (print-only) | WMI method implemented, not yet hardware-verified |
 | Dell   | No (print-only) | WMI method implemented, not yet hardware-verified |
 | HP     | No (print-only) | WMI method implemented, not yet hardware-verified |
@@ -27,6 +27,35 @@ invoke it. Once someone verifies a vendor's method against real hardware,
 flip it to auto-apply in `src/vendor/mod.rs::limiter_for` by changing
 nothing but that vendor's `auto_applies()` — the call logic is already
 implemented and unit-tested against a mock WMI transport.
+
+### ASUS mechanism (why it isn't raw WMI)
+
+ASUS's ATK WMI interface for battery control is real and callable
+(`root\wmi` class `AsusAtkWmi_WMNB`, methods `DEVS`/`DSTS`, device ID
+`0x00120057` — the same interface and DevID Linux's `asus-wmi` kernel
+driver uses), but on the ROG Strix G18 its ACPI-WMI security descriptor
+rejects every caller except Armoury Crate's own SYSTEM service. This was
+confirmed by hitting an identical `WBEM_E_INVALID_PARAMETER` from three
+independent, fully-elevated invocation paths (raw COM `IWbemServices`,
+legacy `.NET`/`System.Management`, and the modern CIM cmdlets) — even for
+the simplest possible call (`INIT` with a single zero argument). That
+consistent failure across unrelated stacks means it isn't a parameter or
+binding bug; it's an intentional access restriction.
+
+Rather than escalate to raw EC port I/O to route around that (see the
+section below — real risk of hardware damage), `AsusLimiter` drives the
+exact mechanism Armoury Crate's own `ASUSOptimization` service already
+uses: a plain, world-writable INI file it polls —
+`C:\ProgramData\ASUS\ASUS System Control Interface\AsusOptimization\Customization.ini`,
+section `[BatteryHealthCharging]`, key `value=<percent>` — applied by
+restarting that service (`sc.exe stop`/`start ASUSOptimization`). This is
+the real electrical charge-cutoff mechanism (the embedded controller
+genuinely stops delivering charge current at the target percentage, the
+same as unplugging for charging purposes while AC still powers the
+machine) — it's Armoury Crate's own documented behavior, just applied
+without needing its GUI running. Both the file path and the service
+restart are overridable via `ROHOMIEO_BATTERY_GUARD_ASUS_INI` and
+`ROHOMIEO_BATTERY_GUARD_SKIP_SERVICE_RESTART` for testing.
 
 ## If a vendor's WMI method doesn't work
 
