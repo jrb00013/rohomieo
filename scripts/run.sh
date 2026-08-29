@@ -316,10 +316,10 @@ if [[ "$PLATFORM" == "wsl" ]]; then
       fi
     fi
 
-    if [[ "$PLATFORM" == "windows" || "$PLATFORM" == "wsl" ]]; then
+    if [[ "$PLATFORM" == "wsl" ]]; then
       echo "==> --global: applying battery charge-limit guard (best-effort)"
       bg_script_w="$(wslpath -w "$ROOT/scripts/windows/battery-guard.ps1" 2>/dev/null || echo "$ROOT/scripts/windows/battery-guard.ps1")"
-      if ! setup_ps_file "$bg_script_w" &>/dev/null; then
+      if ! setup_ps_file "$bg_script_w"; then
         echo "==> battery-guard could not be applied — continuing (non-fatal)"
       fi
     fi
