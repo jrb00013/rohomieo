@@ -3,6 +3,9 @@ use crate::transport::WmiTransport;
 use anyhow::Result;
 
 mod asus;
+mod dell;
+mod hp;
+mod lenovo;
 
 #[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq)]
@@ -24,7 +27,10 @@ pub trait ChargeLimiter {
 pub fn limiter_for(vendor: &Vendor) -> Option<Box<dyn ChargeLimiter>> {
     match vendor {
         Vendor::Asus => Some(Box::new(asus::AsusLimiter)),
-        _ => None,
+        Vendor::Lenovo => Some(Box::new(lenovo::LenovoLimiter)),
+        Vendor::Dell => Some(Box::new(dell::DellLimiter)),
+        Vendor::Hp => Some(Box::new(hp::HpLimiter)),
+        Vendor::Unknown(_) => None,
     }
 }
 
