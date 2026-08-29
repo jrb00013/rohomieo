@@ -316,6 +316,14 @@ if [[ "$PLATFORM" == "wsl" ]]; then
       fi
     fi
 
+    if [[ "$PLATFORM" == "windows" || "$PLATFORM" == "wsl" ]]; then
+      echo "==> --global: applying battery charge-limit guard (best-effort)"
+      bg_script_w="$(wslpath -w "$ROOT/scripts/windows/battery-guard.ps1" 2>/dev/null || echo "$ROOT/scripts/windows/battery-guard.ps1")"
+      if ! setup_ps_file "$bg_script_w" &>/dev/null; then
+        echo "==> battery-guard could not be applied — continuing (non-fatal)"
+      fi
+    fi
+
     if ss -ulnp 2>/dev/null | grep -q ':3478'; then
       echo "UDP :3478 is already in use — stop the other TURN/coturn session and retry." >&2
       ss -ulnp 2>/dev/null | grep ':3478' | head -3 >&2 || true
