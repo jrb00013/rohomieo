@@ -85,6 +85,13 @@ impl WmiTransport for RealWmiTransport {
 pub struct RealWmiTransport;
 
 #[cfg(not(target_os = "windows"))]
+impl RealWmiTransport {
+    pub fn connect(_namespace: &str) -> anyhow::Result<Self> {
+        Ok(RealWmiTransport)
+    }
+}
+
+#[cfg(not(target_os = "windows"))]
 impl WmiTransport for RealWmiTransport {
     fn call_method(
         &self,
