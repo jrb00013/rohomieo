@@ -1,6 +1,5 @@
 use crate::transport::WmiTransport;
 
-#[allow(dead_code)]
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub enum Vendor {
     Asus,
