@@ -79,3 +79,47 @@ show the real EC command sequences for many vendors) and projects like
 LenovoLegionToolkit or NBFC, which do exactly this style of EC access on
 Windows. Treat it as a separate, much higher-risk project — not an
 extension of this crate.
+
+## Investigated and rejected: forcing the system off AC while plugged in
+
+A charge *limit* (what this crate does) is not the same thing as forcing
+the system to run off battery while AC stays physically connected — that
+was explored for this crate and explicitly rejected. Recording why, so it
+isn't re-attempted:
+
+**Why it can't be done from software alone.** ACPI's `_PSR` (Power
+Source) method is a one-way report: the EC reads its own hardware
+AC-detect pin, writes that status into EC RAM, and `_PSR` just reads that
+RAM value back to the OS. Data flows **EC → ACPI table → OS**, never the
+reverse. The EC's actual charge/discharge decision is made entirely in EC
+firmware from its own hardware pin state — it does not consult what the
+OS's ACPI namespace reports. Overriding `_PSR` to always report "Offline"
+(via a patched DSDT/SSDT — the only real mechanism for this, and one that
+requires a reboot with a correctly recompiled AML table, not anything
+loadable at runtime) would only make **Windows lie to itself** — wrong
+battery icon, wrong power-plan behavior — while the EC keeps charging the
+battery exactly as before, because nothing at the ACPI-table layer
+reaches back down to the EC's real charge-current logic. This makes the
+whole approach pointless independent of its real DSDT-patching risk
+(malformed AML can produce a system that won't boot until the override is
+cleared from recovery).
+
+**Also rejected: kernel-mode I/O drivers** (RWEverything's `RwDrv.sys`,
+WinRing0, WinIo/PortTalk) to read/patch EC RAM or trap I/O ports 0x62/0x66
+directly. These grant arbitrary ring-0 memory/port access to any calling
+process, which is exactly why Microsoft puts them on its vulnerable-driver
+blocklist — loading one on a machine that also runs rohomieo (a service
+explicitly hardened for internet-facing remote access) hands anyone who
+compromises the host a ring-0 privilege-escalation vector. That tradeoff
+is categorically worse than the problem it would solve.
+
+**The path that would actually work, if wanted:** a smart plug or
+networked UPS outlet under `battery-guard`'s control. Poll `--status`,
+cut power at the wall when the limit is reached, restore it once the
+charge drops to a lower threshold. This produces the literal "AC absent,
+EC naturally fails over to battery" behavior with zero risk to this
+machine's hardware or security posture, because it removes AC at the
+actual electrical source instead of lying to software about it. Not
+implemented in this crate as of this writing — would be a new sibling
+module (e.g. `rohomieo-power-cycle`) that calls a plug's local/cloud API
+on the same threshold logic `battery-guard --status` already exposes.
