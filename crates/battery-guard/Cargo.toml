@@ -17,4 +17,7 @@ clap = { version = "4", features = ["derive", "env"] }
 wmi = "0.13"
 serde = { workspace = true }
 
+[target.'cfg(target_os = "windows")'.dependencies]
+windows = { version = "0.58", features = ["Win32_System_Wmi", "Win32_System_Com"] }
+
 [dev-dependencies]
